@@ -1,3 +1,9 @@
+The Things Network packt forwarder
+==================================
+
+Forked from Semtech''s Lora network packet forwarder project. See original description below.
+
+
 	 / _____)             _              | |    
 	( (____  _____ ____ _| |_ _____  ____| |__  
 	 \____ \| ___ |    (_   _) ___ |/ ___)  _ \ 
