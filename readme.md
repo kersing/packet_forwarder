@@ -1,5 +1,5 @@
-The Things Network packt forwarder
-==================================
+The Things Network packet forwarder
+====================================
 
 Forked from Semtech''s Lora network packet forwarder project. See original description below.
 
