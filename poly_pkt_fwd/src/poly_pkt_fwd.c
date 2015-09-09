@@ -153,7 +153,7 @@ static double xtal_correct = 1.0;
 /* GPS configuration and synchronization */
 static char gps_tty_path[64]; /* path of the TTY port GPS is connected on */
 static int gps_tty_fd; /* file descriptor of the GPS TTY port */
-static bool gps_enabled; /* is GPS enabled on that gateway ? */
+static bool gps_active; /* is GPS present and working on the board ? */
 
 /* GPS time reference */
 static pthread_mutex_t mx_timeref = PTHREAD_MUTEX_INITIALIZER; /* control access to GPS time reference */
@@ -164,7 +164,7 @@ static struct tref time_reference_gps; /* time reference used for UTC <-> timest
 static struct coord_s reference_coord;
 
 /* Enable faking the GPS coordinates of the gateway */
-static bool gps_fake_enable; /* enable the feature */
+static bool gps_fake_enable; /* fake coordinates override real coordinates */
 
 /* measurements to establish statistics */
 static pthread_mutex_t mx_meas_up = PTHREAD_MUTEX_INITIALIZER; /* control access to the upstream measurements */
@@ -205,14 +205,13 @@ static bool beacon_next_pps = false; /* signal to prepare beacon packet for TX, 
 /* auto-quit function */
 static uint32_t autoquit_threshold = 0; /* enable auto-quit after a number of non-acknowledged PULL_DATA (0 = disabled)*/
 
-/* Control over the separate subprocesses. */
-//TODO: the virtual server can only receive packets from the ghost-node, we have to integrate these functions on the real packet forwarder.
-//TODO: At the same time, the three packet forwarders have to merged into one.
-static bool timestream_enabled  = true;     /* controls the activation of the time beacon.      */
-static bool upstream_enabled    = true;     /* controls the data flow from end-node to server   */
-static bool downstream_enabled  = false;    /* controls the data flow from server to end-node   */
-static bool ghoststream_enabled = true;     /* controls the data flow from ghost-node to server */
-static bool radiostream_enabled = false;    /* controls the data flow from radio-node to server */
+/* Control over the separate subprocesses. Per default, the system behaves like a basic packet forwarder. */
+static bool gps_enabled         = false;   /* controls the use of the GPS                      */
+static bool beacon_enabled      = false;   /* controls the activation of the time beacon.      */
+static bool upstream_enabled    = true;    /* controls the data flow from end-node to server   */
+static bool downstream_enabled  = true;    /* controls the data flow from server to end-node   */
+static bool ghoststream_enabled = false;   /* controls the data flow from ghost-node to server */
+static bool radiostream_enabled = true;    /* controls the data flow from radio-node to server */
 
 
 /* -------------------------------------------------------------------------- */
@@ -698,14 +697,27 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Reference altitude is configured to %i meters\n", reference_coord.alt);
 	}
 	
-	/* Gateway GPS coordinates hardcoding (aka. faking) option */
-	val = json_object_get_value(conf_obj, "fake_gps");
+	/* Read the value for gps_enabled data */
+	val = json_object_get_value(conf_obj, "gps");
 	if (json_value_get_type(val) == JSONBoolean) {
-		gps_fake_enable = (bool)json_value_get_boolean(val);
-		if (gps_fake_enable == true) {
-			MSG("INFO: fake GPS is enabled\n");
-		} else {
-			MSG("INFO: fake GPS is disabled\n");
+		gps_enabled = (bool)json_value_get_boolean(val);
+	}
+	if (radiostream_enabled == true) {
+		MSG("INFO: GPS is enabled\n");
+	} else {
+		MSG("INFO: GPS is disabled\n");
+    }
+
+	if (gps_enabled) {
+		/* Gateway GPS coordinates hardcoding (aka. faking) option */
+		val = json_object_get_value(conf_obj, "fake_gps");
+		if (json_value_get_type(val) == JSONBoolean) {
+			gps_fake_enable = (bool)json_value_get_boolean(val);
+			if (gps_fake_enable == true) {
+				MSG("INFO: Using fake GPS coordinates instead of real.\n");
+			} else {
+				MSG("INFO: Using real GPS if available.\n");
+			}
 		}
 	}
 	
@@ -774,15 +786,15 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Radiostream data is disabled\n");
     }
 
-	/* Read the value for timestream_enabled data */
-	val = json_object_get_value(conf_obj, "timestream");
+	/* Read the value for beacon_enabled data */
+	val = json_object_get_value(conf_obj, "beacon");
 	if (json_value_get_type(val) == JSONBoolean) {
-		timestream_enabled = (bool)json_value_get_boolean(val);
+		beacon_enabled = (bool)json_value_get_boolean(val);
 	}
 	if (radiostream_enabled == true) {
-		MSG("INFO: Timestream (beacon) is enabled\n");
+		MSG("INFO: Beacon is enabled\n");
 	} else {
-		MSG("INFO: Timestream (beacon) is disabled\n");
+		MSG("INFO: Beacon is disabled\n");
     }
 
 	/* Auto-quit threshold (optional) */
@@ -948,11 +960,11 @@ int main(void)
 	i = lgw_gps_enable(gps_tty_path, NULL, 0, &gps_tty_fd);
 	if (i != LGW_GPS_SUCCESS) {
 		printf("WARNING: [main] impossible to open %s for GPS sync (check permissions)\n", gps_tty_path);
-		gps_enabled = false;
+		gps_active = false;
 		gps_ref_valid = false;
 	} else {
 		printf("INFO: [main] TTY port %s open for GPS synchronization\n", gps_tty_path);
-		gps_enabled = true;
+		gps_active = true;
 		gps_ref_valid = false;
 	}
 	
@@ -1067,7 +1079,7 @@ int main(void)
 	}
 	
 	/* spawn thread to manage GPS */
-	if (gps_enabled == true) {
+	if (gps_active == true) {
 		i = pthread_create( &thrid_gps, NULL, (void * (*)(void *))thread_gps, NULL);
 		if (i != 0) {
 			MSG("ERROR: [main] impossible to create GPS thread\n");
@@ -1160,7 +1172,7 @@ int main(void)
 		}
 		
 		/* access GPS statistics, copy them */
-		if (gps_enabled == true) {
+		if (gps_active == true) {
 			pthread_mutex_lock(&mx_meas_gps);
 			coord_ok = gps_coord_valid;
 			cp_gps_coord  =  meas_gps_coord;
@@ -1170,7 +1182,7 @@ int main(void)
 		
 		/* overwrite with reference coordinates if function is enabled */
 		if (gps_fake_enable == true) {
-			gps_enabled = true;
+			//gps_enabled = true;
 			coord_ok = true;
 			cp_gps_coord = reference_coord;
 		}
@@ -1189,12 +1201,13 @@ int main(void)
 		printf("# RF packets sent to concentrator: %u (%u bytes)\n", (cp_nb_tx_ok+cp_nb_tx_fail), cp_dw_payload_byte);
 		printf("# TX errors: %u\n", cp_nb_tx_fail);
 		printf("### [GPS] ###\n");
+		//TODO: this is not symmetrical. time can also be derived from other sources, fix
 		if (gps_enabled == true) {
 			/* no need for mutex, display is not critical */
 			if (gps_ref_valid == true) {
-				printf("# Valid time reference (age: %li sec)\n", (long)difftime(time(NULL), time_reference_gps.systime));
+				printf("# Valid gps time reference (age: %li sec)\n", (long)difftime(time(NULL), time_reference_gps.systime));
 			} else {
-				printf("# Invalid time reference (age: %li sec)\n", (long)difftime(time(NULL), time_reference_gps.systime));
+				printf("# Invalid gps time reference (age: %li sec)\n", (long)difftime(time(NULL), time_reference_gps.systime));
 			}
 			if (gps_fake_enable == true) {
 				printf("# GPS *FAKE* coordinates: latitude %.5f, longitude %.5f, altitude %i m\n", cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt);
@@ -1223,9 +1236,8 @@ int main(void)
 	if (upstream_enabled) pthread_join(thrid_up, NULL);
 	if (downstream_enabled) pthread_cancel(thrid_down); /* don't wait for downstream thread */
 	if (ghoststream_enabled) ghost_stop();
-	//TODO: hier ook gps_enabled.
-	pthread_cancel(thrid_gps); /* don't wait for GPS thread */
-	pthread_cancel(thrid_valid); /* don't wait for validation thread */
+	if (gps_active) pthread_cancel(thrid_gps);   /* don't wait for GPS thread */
+	if (gps_active) pthread_cancel(thrid_valid); /* don't wait for validation thread */
 	
 	/* if an exit signal was received, try to quit properly */
 	if (exit_sig) {
@@ -1327,8 +1339,9 @@ void thread_up(void) {
 			continue;
 		}
 		
+		//TODO: is this okay, can time be recruted from the local system if gps is not working?
 		/* get a copy of GPS time reference (avoid 1 mutex per packet) */
-		if ((nb_pkt > 0) && (gps_enabled == true)) {
+		if ((nb_pkt > 0) && (gps_active == true)) {
 			pthread_mutex_lock(&mx_timeref);
 			ref_ok = gps_ref_valid;
 			local_ref = time_reference_gps;
@@ -1415,7 +1428,7 @@ void thread_up(void) {
 			/* Packet RX time (GPS based), 37 useful chars */
 			//TODO: Van onderstaande blocken kan er maar 1 worden uitgevoerd. Beslis op basis van GPS aanwezigheid
 			// Dit is nog niet goed gecodeerd
-			if (gps_enabled) {
+			if (gps_active) {
 				if (ref_ok == true) {
 					/* convert packet timestamp to UTC absolute time */
 					j = lgw_cnt2utc(local_ref, p->count_us, &pkt_utc_time);
@@ -1833,7 +1846,8 @@ void thread_down(void* pic) {
 			
 			/* if beacon must be prepared, load it and wait for it to trigger */
 			//TODO: this should only be present in one thread => make special beacon thread?
-			if ((beacon_next_pps == true) && (gps_enabled == true)) {
+			//TODO: beacon can also work on local time base, implement.
+			if ((beacon_next_pps == true) && (gps_active == true)) {
 				pthread_mutex_lock(&mx_timeref);
 				beacon_next_pps = false;
 				if ((gps_ref_valid == true) && (xtal_correct_ok == true)) {
@@ -1969,7 +1983,7 @@ void thread_down(void* pic) {
 						json_value_free(root_val);
 						continue;
 					}
-					if (gps_enabled == true) {
+					if (gps_active == true) {
 						pthread_mutex_lock(&mx_timeref);
 						if (gps_ref_valid == true) {
 							local_ref = time_reference_gps;
