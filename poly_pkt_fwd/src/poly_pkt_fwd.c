@@ -58,6 +58,7 @@ Maintainer: Ruud Vlaming
 #include "loragw_aux.h"
 #include "poly_pkt_fwd.h"
 #include "ghost.h"
+#include "monitor.h"
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
@@ -77,9 +78,12 @@ Maintainer: Ruud Vlaming
 
 #define MAX_SERVERS		    4 /* Support up to 4 servers, more does not seem realistic */
 
+//TODO: This default values are a code-smell, remove.
 #define DEFAULT_SERVER		127.0.0.1 /* hostname also supported */
 #define DEFAULT_PORT_UP		1780
 #define DEFAULT_PORT_DW		1782
+
+
 #define DEFAULT_KEEPALIVE	5	/* default time interval for downstream keep-alive packet */
 #define DEFAULT_STAT		30	/* default time interval for statistics */
 #define PUSH_TIMEOUT_MS		100
@@ -205,13 +209,25 @@ static bool beacon_next_pps = false; /* signal to prepare beacon packet for TX, 
 /* auto-quit function */
 static uint32_t autoquit_threshold = 0; /* enable auto-quit after a number of non-acknowledged PULL_DATA (0 = disabled)*/
 
+//TODO: This default values are a code-smell, remove.
+static char ghost_addr[64] = "127.0.0.1"; /* address of the server (host name or IPv4/IPv6) */
+static char ghost_port[8]  = "1914";      /* port to listen on */
+
+//TODO: This default values are a code-smell, remove.
+static char monitor_addr[64] = "127.0.0.1"; /* address of the server (host name or IPv4/IPv6) */
+static char monitor_port[8]  = "2008";      /* port to listen on */
+
 /* Control over the separate subprocesses. Per default, the system behaves like a basic packet forwarder. */
 static bool gps_enabled         = false;   /* controls the use of the GPS                      */
 static bool beacon_enabled      = false;   /* controls the activation of the time beacon.      */
-static bool upstream_enabled    = true;    /* controls the data flow from end-node to server   */
-static bool downstream_enabled  = true;    /* controls the data flow from server to end-node   */
-static bool ghoststream_enabled = false;   /* controls the data flow from ghost-node to server */
-static bool radiostream_enabled = true;    /* controls the data flow from radio-node to server */
+static bool monitor_enabled     = false;   /* controls the activation access mode.             */
+
+/* Control over the separate streams. Per default, the system behaves like a basic packet forwarder. */
+static bool upstream_enabled     = true;    /* controls the data flow from end-node to server         */
+static bool downstream_enabled   = true;    /* controls the data flow from server to end-node         */
+static bool ghoststream_enabled  = false;   /* controls the data flow from ghost-node to server       */
+static bool radiostream_enabled  = true;    /* controls the data flow from radio-node to server       */
+static bool statusstream_enabled = true;    /* controls the data flow of status information to server */
 
 
 /* -------------------------------------------------------------------------- */
@@ -635,6 +651,34 @@ static int parse_gateway_configuration(const char * conf_file) {
 	}
 
 	
+	/* monitor hostname or IP address (optional) */
+	str = json_object_get_string(conf_obj, "monitor_address");
+	if (str != NULL) {
+		strncpy(monitor_addr, str, sizeof monitor_addr);
+		MSG("INFO: monitor hostname or IP address is configured to \"%s\"\n", monitor_addr);
+	}
+
+	/* get monitor connection port (optional) */
+	val = json_object_get_value(conf_obj, "monitor_port");
+	if (val != NULL) {
+		snprintf(monitor_port, sizeof monitor_port, "%u", (uint16_t)json_value_get_number(val));
+		MSG("INFO: monitor port is configured to \"%s\"\n", monitor_port);
+	}
+
+	/* ghost hostname or IP address (optional) */
+	str = json_object_get_string(conf_obj, "ghost_address");
+	if (str != NULL) {
+		strncpy(ghost_addr, str, sizeof ghost_addr);
+		MSG("INFO: ghost hostname or IP address is configured to \"%s\"\n", ghost_addr);
+	}
+
+	/* get ghost connection port (optional) */
+	val = json_object_get_value(conf_obj, "ghost_port");
+	if (val != NULL) {
+		snprintf(ghost_port, sizeof ghost_port, "%u", (uint16_t)json_value_get_number(val));
+		MSG("INFO: ghost port is configured to \"%s\"\n", ghost_port);
+	}
+
 	/* get keep-alive interval (in seconds) for downstream (optional) */
 	val = json_object_get_value(conf_obj, "keepalive_interval");
 	if (val != NULL) {
@@ -702,13 +746,13 @@ static int parse_gateway_configuration(const char * conf_file) {
 	if (json_value_get_type(val) == JSONBoolean) {
 		gps_enabled = (bool)json_value_get_boolean(val);
 	}
-	if (radiostream_enabled == true) {
+	if (gps_enabled == true) {
 		MSG("INFO: GPS is enabled\n");
 	} else {
 		MSG("INFO: GPS is disabled\n");
     }
 
-	if (gps_enabled) {
+	if (gps_enabled == true) {
 		/* Gateway GPS coordinates hardcoding (aka. faking) option */
 		val = json_object_get_value(conf_obj, "fake_gps");
 		if (json_value_get_type(val) == JSONBoolean) {
@@ -786,6 +830,17 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Radiostream data is disabled\n");
     }
 
+	/* Read the value for statusstream_enabled data */
+	val = json_object_get_value(conf_obj, "statusstream");
+	if (json_value_get_type(val) == JSONBoolean) {
+		statusstream_enabled = (bool)json_value_get_boolean(val);
+	}
+	if (statusstream_enabled == true) {
+		MSG("INFO: Statusstream data is enabled\n");
+	} else {
+		MSG("INFO: Statusstream data is disabled\n");
+    }
+
 	/* Read the value for beacon_enabled data */
 	val = json_object_get_value(conf_obj, "beacon");
 	if (json_value_get_type(val) == JSONBoolean) {
@@ -795,6 +850,17 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Beacon is enabled\n");
 	} else {
 		MSG("INFO: Beacon is disabled\n");
+    }
+
+	/* Read the value for monitor_enabled data */
+	val = json_object_get_value(conf_obj, "monitor");
+	if (json_value_get_type(val) == JSONBoolean) {
+		monitor_enabled = (bool)json_value_get_boolean(val);
+	}
+	if (radiostream_enabled == true) {
+		MSG("INFO: Monitor is enabled\n");
+	} else {
+		MSG("INFO: Monitor is disabled\n");
     }
 
 	/* Auto-quit threshold (optional) */
@@ -957,15 +1023,22 @@ int main(void)
 	
 	/* Start GPS a.s.a.p., to allow it to lock */
 	//TODO: Change meaning of gps_enabled.
-	i = lgw_gps_enable(gps_tty_path, NULL, 0, &gps_tty_fd);
-	if (i != LGW_GPS_SUCCESS) {
-		printf("WARNING: [main] impossible to open %s for GPS sync (check permissions)\n", gps_tty_path);
-		gps_active = false;
-		gps_ref_valid = false;
-	} else {
-		printf("INFO: [main] TTY port %s open for GPS synchronization\n", gps_tty_path);
-		gps_active = true;
-		gps_ref_valid = false;
+	if (gps_enabled == true) {
+		if (gps_fake_enable == false) {
+			i = lgw_gps_enable(gps_tty_path, NULL, 0, &gps_tty_fd);
+			if (i != LGW_GPS_SUCCESS) {
+				printf("WARNING: [main] impossible to open %s for GPS sync (check permissions)\n", gps_tty_path);
+				gps_active = false;
+				gps_ref_valid = false;
+			} else {
+				printf("INFO: [main] TTY port %s open for GPS synchronization\n", gps_tty_path);
+				gps_active = true;
+				gps_ref_valid = false;
+			}
+		} else {
+			gps_active = false;
+			gps_ref_valid = false;
+		}
 	}
 	
 	/* get timezone info */
@@ -1050,25 +1123,31 @@ int main(void)
 		}
 		freeaddrinfo(result);
 	}
-	MSG("INFO: [main] Starting the concentrator\n");
+
 	/* starting the concentrator */
-	i = lgw_start();
-	if (i == LGW_HAL_SUCCESS) {
-		MSG("INFO: [main] concentrator started, packet can now be received\n");
+	if (radiostream_enabled == true) {
+		MSG("INFO: [main] Starting the concentrator\n");
+		i = lgw_start();
+		if (i == LGW_HAL_SUCCESS) {
+			MSG("INFO: [main] concentrator started, radio packets can now be received.\n");
+		} else {
+			MSG("ERROR: [main] failed to start the concentrator\n");
+			exit(EXIT_FAILURE);
+		}
 	} else {
-		MSG("ERROR: [main] failed to start the concentrator\n");
-		exit(EXIT_FAILURE);
+		MSG("WARNING: Radio is disabled, radio packets cannot be send or received.\n");
 	}
+
 	
 	/* spawn threads to manage upstream and downstream */
-	if (upstream_enabled) {
+	if (upstream_enabled == true) {
 		i = pthread_create( &thrid_up, NULL, (void * (*)(void *))thread_up, NULL);
 		if (i != 0) {
 			MSG("ERROR: [main] impossible to create upstream thread\n");
 			exit(EXIT_FAILURE);
 		}
 	}
-	if (downstream_enabled) {
+	if (downstream_enabled == true) {
 		for (ic = 0; ic < serv_count; ic++) {
 			i = pthread_create( &thrid_down, NULL, (void * (*)(void *))thread_down, (void *) (long) ic);
 			if (i != 0) {
@@ -1101,8 +1180,22 @@ int main(void)
 	sigaction(SIGTERM, &sigact, NULL); /* default "kill" command */
 
 	/* Start the ghost Listener */
-    if (ghoststream_enabled) ghost_start();
+    if (ghoststream_enabled == true) {
+    	ghost_start(ghost_addr,ghost_port);
+		MSG("INFO: [main] Ghost listener started, ghost packets can now be received.\n");
+    }
 	
+	/* Connect to the monitor server */
+    if (monitor_enabled == true) {
+    	monitor_start(monitor_addr,monitor_port);
+		MSG("INFO: [main] Monitor contacted, monitor data can now be requested.\n");
+    }
+
+    /* Check if we have anything to do */
+    if ( (radiostream_enabled == false) && (ghoststream_enabled == false) && (statusstream_enabled == false) && (monitor_enabled == false) ) {
+    	MSG("WARNING: [main] All streams have been disabled, gateway may be completely silent.\n");
+    }
+
 	/* main loop task : statistics collection */
 	while (!exit_sig && !quit_sig) {
 		/* wait for next reporting interval */
@@ -1222,22 +1315,25 @@ int main(void)
 		printf("##### END #####\n");
 		
 		/* generate a JSON report (will be sent to server by upstream thread) */
-		pthread_mutex_lock(&mx_stat_rep);
-		if ((gps_enabled == true) && (coord_ok == true)) {
-			snprintf(status_report, STATUS_SIZE, "\"stat\":{\"time\":\"%s\",\"lati\":%.5f,\"long\":%.5f,\"alti\":%i,\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u}", stat_timestamp, cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok);
-		} else {
-			snprintf(status_report, STATUS_SIZE, "\"stat\":{\"time\":\"%s\",\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u}", stat_timestamp, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok);
+		if (statusstream_enabled == true) {
+			pthread_mutex_lock(&mx_stat_rep);
+			if ((gps_enabled == true) && (coord_ok == true)) {
+				snprintf(status_report, STATUS_SIZE, "\"stat\":{\"time\":\"%s\",\"lati\":%.5f,\"long\":%.5f,\"alti\":%i,\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u}", stat_timestamp, cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok);
+			} else {
+				snprintf(status_report, STATUS_SIZE, "\"stat\":{\"time\":\"%s\",\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u}", stat_timestamp, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok);
+			}
+			report_ready = true;
+			pthread_mutex_unlock(&mx_stat_rep);
 		}
-		report_ready = true;
-		pthread_mutex_unlock(&mx_stat_rep);
 	}
 	
 	/* wait for upstream thread to finish (1 fetch cycle max) */
-	if (upstream_enabled) pthread_join(thrid_up, NULL);
-	if (downstream_enabled) pthread_cancel(thrid_down); /* don't wait for downstream thread */
-	if (ghoststream_enabled) ghost_stop();
-	if (gps_active) pthread_cancel(thrid_gps);   /* don't wait for GPS thread */
-	if (gps_active) pthread_cancel(thrid_valid); /* don't wait for validation thread */
+	if (upstream_enabled == true) pthread_join(thrid_up, NULL);
+	if (downstream_enabled == true) pthread_cancel(thrid_down); /* don't wait for downstream thread */
+	if (ghoststream_enabled == true) ghost_stop();
+	if (monitor_enabled == true) monitor_stop();
+	if (gps_active == true) pthread_cancel(thrid_gps);   /* don't wait for GPS thread */
+	if (gps_active == true) pthread_cancel(thrid_valid); /* don't wait for validation thread */
 	
 	/* if an exit signal was received, try to quit properly */
 	if (exit_sig) {
@@ -1247,11 +1343,13 @@ int main(void)
 			shutdown(sock_down[ic], SHUT_RDWR);
 		}
 		/* stop the hardware */
-		i = lgw_stop();
-		if (i == LGW_HAL_SUCCESS) {
-			MSG("INFO: concentrator stopped successfully\n");
-		} else {
-			MSG("WARNING: failed to stop concentrator successfully\n");
+		if (radiostream_enabled == true) {
+			i = lgw_stop();
+			if (i == LGW_HAL_SUCCESS) {
+				MSG("INFO: concentrator stopped successfully\n");
+			} else {
+				MSG("WARNING: failed to stop concentrator successfully\n");
+			}
 		}
 	}
 	
@@ -1320,8 +1418,8 @@ void thread_up(void) {
 	
 		/* fetch packets */
 		pthread_mutex_lock(&mx_concent);
-		if (radiostream_enabled) nb_pkt = lgw_receive(NB_PKT_MAX, rxpkt); else nb_pkt = 0;
-		if (ghoststream_enabled) nb_pkt = ghost_get(NB_PKT_MAX-nb_pkt, &rxpkt[nb_pkt]) + nb_pkt;
+		if (radiostream_enabled == true) nb_pkt = lgw_receive(NB_PKT_MAX, rxpkt); else nb_pkt = 0;
+		if (ghoststream_enabled == true) nb_pkt = ghost_get(NB_PKT_MAX-nb_pkt, &rxpkt[nb_pkt]) + nb_pkt;
 
 		pthread_mutex_unlock(&mx_concent);
 		if (nb_pkt == LGW_HAL_ERROR) {

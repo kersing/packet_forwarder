@@ -1,13 +1,12 @@
 /*
-  Extension of Semtech Semtech-Cycleo Packet Forwarder.
-  (C) 2015 Beta Research BV
-
-Description:
-	Virtualization of nodes.
-
-License: Revised BSD License, see LICENSE.TXT file include in the project
-Maintainer: Ruud Vlaming
-*/
+ *  Extension of Semtech Semtech-Cycleo Packet Forwarder.
+ *  (C) 2015 Beta Research BV
+ *
+ *  Description: Virtualization of nodes.
+ *
+ *  License: Revised BSD License, see LICENSE.TXT file include in the project
+ *  Maintainer: Ruud Vlaming
+ */
 
 #ifndef _GHOST_H_
 #define _GHOST_H_
@@ -42,7 +41,7 @@ Maintainer: Ruud Vlaming
 
 
 /* Call this to start/stop the server that communicates with the ghost node server. */
-void ghost_start(void);
+void ghost_start(const char * ghost_addr, const char * ghost_port);
 void ghost_stop(void);
 
 

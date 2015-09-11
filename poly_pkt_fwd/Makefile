@@ -70,15 +70,18 @@ obj/base64.o: src/base64.c inc/base64.h
 obj/parson.o: src/parson.c inc/parson.h
 	$(CC) -c $(CFLAGS) $< -o $@
 
+obj/monitor.o: src/monitor.c inc/monitor.h 
+	$(CC) -c $(CFLAGS) $< -o $@
+
 obj/ghost.o: src/ghost.c inc/ghost.h $(LGW_INC)
 	$(CC) -I$(LGW_PATH)/inc -c $(CFLAGS) $< -o $@
 
 ### Main program compilation and assembly
 
-obj/$(APP_NAME).o: src/$(APP_NAME).c $(LGW_INC) inc/parson.h inc/base64.h inc/ghost.h
+obj/$(APP_NAME).o: src/$(APP_NAME).c $(LGW_INC) inc/parson.h inc/base64.h inc/ghost.h inc/monitor.h
 	$(CC) -c $(CFLAGS) $(VFLAG) -I$(LGW_PATH)/inc $< -o $@
 
-$(APP_NAME): obj/$(APP_NAME).o $(LGW_PATH)/libloragw.a obj/parson.o obj/base64.o obj/ghost.o 
-	$(CC) -L$(LGW_PATH) $< obj/parson.o obj/base64.o obj/ghost.o -o $@ $(LIBS)
+$(APP_NAME): obj/$(APP_NAME).o $(LGW_PATH)/libloragw.a obj/parson.o obj/base64.o obj/ghost.o obj/monitor.o 
+	$(CC) -L$(LGW_PATH) $< obj/parson.o obj/base64.o obj/ghost.o obj/monitor.o -o $@ $(LIBS)
 
 ### EOF

@@ -195,11 +195,21 @@
     },
 
     "gateway_conf": {
-        "gateway_ID": "AA555A0000000000",
         /* change with default server address/ports, or overwrite in local_conf.json */
+        "gateway_ID": "AA555A0000000000",
+        /* Devices */
+        "gps": true,
+        "beacon": false,
+        "monitor": true,
+        "upstream": true,
+        "downstream": false,
+        "ghoststream": true,
+        "radiostream": false,
+        "statusstream": true,
+        /* node server */
         "server_address": "127.0.0.1",
         "serv_port_up": 1680,
-        "serv_port_down": 1680,
+        "serv_port_down": 1681,
         /* adjust the following parameters for your network */
         "keepalive_interval": 10,
         "stat_interval": 30,
@@ -209,6 +219,16 @@
         "forward_crc_error": false,
         "forward_crc_disabled": false,
         /* GPS configuration */
-        "gps_tty_path": "/dev/ttyAMA0"
+        "gps_tty_path": "/dev/ttyAMA0",
+        "fake_gps": true,
+        "ref_latitude": 10,
+        "ref_longitude": 20,
+        "ref_altitude": -1,
+        /* Ghost configuration */
+        "ghost_address": "127.0.0.1",
+        "ghost_port": 1918,
+        /* Monitor configuration */
+        "monitor_address": "127.0.0.1",
+        "monitor_port": 2008   
     }
 }

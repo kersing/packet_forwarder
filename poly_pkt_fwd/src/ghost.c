@@ -1,13 +1,12 @@
 /*
-  Extension of Semtech Semtech-Cycleo Packet Forwarder.
-  (C) 2015 Beta Research BV
-
-Description:
-    Virtualization of nodes.
-
-License: Revised BSD License, see LICENSE.TXT file include in the project
-Maintainer: Ruud Vlaming
-*/
+ *  Extension of Semtech Semtech-Cycleo Packet Forwarder.
+ *  (C) 2015 Beta Research BV
+ *
+ *  Description: Virtualization of nodes.
+ *
+ *  License: Revised BSD License, see LICENSE.TXT file include in the project
+ *  Maintainer: Ruud Vlaming
+ */
 
 
 #include <stdint.h>     /* C99 types */
@@ -43,10 +42,7 @@ volatile bool ghost_run = false;      /* false -> ghost thread terminates cleanl
 
 struct timeval ghost_timeout = {0, (200 * 1000)}; /* non critical for throughput */
 
-static pthread_mutex_t cb_ghost = PTHREAD_MUTEX_INITIALIZER; /* control access to the downstream measurements */
-
-static char ghost_addr[64] = "127.0.0.1"; /* address of the server (host name or IPv4/IPv6) */
-static char ghost_port[8]  = "1914";      /* port to listen on */
+static pthread_mutex_t cb_ghost = PTHREAD_MUTEX_INITIALIZER; /* control access to the ghoststream measurements */
 
 static int rxpktSize = sizeof(struct lgw_pkt_rx_s);
 static int txpktSize = sizeof(struct lgw_pkt_tx_s);
@@ -131,7 +127,7 @@ static void thread_ghost(void);
 /* --- THREAD: RECEIVING PACKETS FROM GHOST NODES --------------------------- */
 
 
-void ghost_start(void)
+void ghost_start(const char * ghost_addr, const char * ghost_port)
 {
     /* You cannot start a running ghost listener.*/
     if (ghost_run) return;
@@ -267,6 +263,7 @@ static void thread_ghost(void)
     /* pre-fill the pull request buffer with fixed fields */
     buff_req[0] = PROTOCOL_VERSION;
     buff_req[3] = GHOST_DATA;
+    //TODO: repair random verification
     *(uint32_t *)(buff_req + 4) = 0;
     *(uint32_t *)(buff_req + 8) = 0;
 
@@ -280,7 +277,7 @@ static void thread_ghost(void)
         send(sock_ghost, (void *)buff_req, sizeof buff_req, 0);
         clock_gettime(CLOCK_MONOTONIC, &send_time);
         req_ack = false;
-        MSG("MAIN LOOP ");
+        MSG("GHOST LOOP ");
         /* listen to packets and process them until a new PULL request must be sent */
         recv_time = send_time;
         while ((int)difftimespec(recv_time, send_time) < NODE_CALL_SECS)
