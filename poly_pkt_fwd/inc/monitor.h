@@ -25,7 +25,7 @@
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE CONSTANTS AND FIELDS ------------------------------------------ */
 
-#define MNTR_RQST_MSGSIZE       6     /* Monitor request size. */
+#define MNTR_RQST_MSGSIZE     128     /* Monitor request max size. */
 #define MNTR_CALL_SECS         60     /* Minimum time between calls for monitor nodes, don't hammer de node server. */
 #define MONITOR_SIZE          256     /* Maximal size of the monitor JSON information packet. */
 

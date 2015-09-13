@@ -32,23 +32,23 @@ please read the PROTOCOL.TXT document.
 
 2. System schematic and definitions
 ------------------------------------
-
-	((( Y )))
-	    |
-	    |
-	+- -|- - - - - - - - - - - - -+        xxxxxxxxxxxx          +---------+
-	|+--+-----------+     +------+|       xx x  x     xxx        |         |-+
-	||              |     |      ||      xx  Internet  xx        |         | |-+
-	|| Concentrator |<----+ Host |<---- xx     or      xx ======>|         | | |
-	||              | SPI |      ||      xx  Intranet  xx        | Servers | | |
-	|+--------------+     +------+|       xxxx   x   xxxx        |         | | |
-	|   ^                    ^    |           xxxxxxxx           |         | | |
-	|   | PPS  +-----+  NMEA |    |              |               |         | | |
-	|   +------| GPS |-------+    |         +--------+           +---------+ | |
-	|          +-----+            |         | ghost  |             +---------+ |
-	|                             |         | server |               +---------+ 
-	|            Gateway          |         +--------+
-	+- - - - - - - - - - - - - - -+
+                                      
+         ((( Y ))) 
+             |                                   
+             |     
+         +- -|- - - - - - - - - - - - -+          xxxxxxxx             +---------+
+         |+--+-----------+     +------+|       xxx        xxx          |         |-+
+         ||              |     |      ||      xx  Internet  xx         |         | |-+
+         || Concentrator |<----+ Host |<---- xx      or      xx ======>| Network | | |-+
+         ||              | SPI |      ||      xx  Intranet  xx         | Servers | | | |
+         |+--------------+     +------+|       xxx        xxx          |         | | | |
+         |   ^                    ^    |        | xxxxxxxx |           |         | | | |
+         |   | PPS  +-----+  NMEA |    |        |          |           |         | | | |
+         |   +------| GPS |-------+    |  +--------+  +---------+      +---------+ | | |
+         |          +-----+            |  | ghost  |  | monitor |        +---------+ | |
+         |                             |  | server |  | server  |          +---------+ |
+         |            Gateway          |  +--------+  +---------+            +---------+
+         +- - - - - - - - - - - - - - -+
 
 Concentrator: radio RX/TX board, based on Semtech multichannel modems (SX130x), 
 transceivers (SX135x) and/or low-power stand-alone modems (SX127x).
@@ -60,12 +60,16 @@ Gateway: a device composed of at least one radio concentrator, a host, some
 network connection to the internet or a private network (Ethernet, 3G, Wifi, 
 microwave link), and optionally a GPS receiver for synchronization. 
 
-Servers: abstract computers that will process the RF packets received and 
+Network Servers: abstract computers that will process the RF packets received and 
 forwarded by the gateway, and issue RF packets in response that the gateway 
 will have to emit.
 
 Ghost Server: Program on in/external computer the serves simulated radio
 packets for testing purposes. Packets are send/received via UDP protocol.
+
+Monitor Server: Program on in/external computer from which it is possible
+to maintain the gateway by requesting system status updates or logging in
+by an ssh tunnel through a firewall (on the gateways side)
 
 
 3. Dependencies

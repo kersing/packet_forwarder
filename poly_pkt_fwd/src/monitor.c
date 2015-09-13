@@ -37,6 +37,7 @@
 #define MSG(args...)    printf(args) /* message that is destined to the user */
 #define PROTOCOL_VERSION    1
 #define MNTR_DATA          17
+#define MNTR_RSPN          18
 
 volatile bool monitor_run = false;      /* false -> monitor thread terminates cleanly */
 
@@ -44,13 +45,47 @@ struct timeval monitor_timeout = {0, (200 * 1000)}; /* non critical for throughp
 
 static pthread_mutex_t cb_monitor = PTHREAD_MUTEX_INITIALIZER; /* control access to the monitor measurements */
 
-//TODO: This default values are a code-smell, remove.
-//static char monitor_addr[64] = "127.0.0.1"; /* address of the server (host name or IPv4/IPv6) */
-//static char monitor_port[8]  = "2008";      /* port to listen on */
+/* Format
+ * Bytes 0,1,2,3:  Protocol definition
+ * Byte  4:        Command type identifier
+ * Bytes 5,6:      Action parameter
+ * Bytes 7 .. 255  Optional arguments
+ *
+ * All instructions that cannot be interpreted maybe silently ignored, or an error message
+ * may be sent.
+ *
+ * Byte 4: 0x00 => ignore message, this is an error
+ *         0x01 => acknowledge of receipt, no action necessary
+ *         0x02 => Execute an instruction from the shell instruction list.
+ *         0x03 => open an ssh tunnel for ssh connection (usually on port 22)
+ *         0x04 => close the ssh tunnel for ssh connection (usually on port 22)
+ *         0x05 => open an ssh tunnel for web connection (usually on port 80)
+ *         0x06 => close the ssh tunnel for web connection (usually on port 80)
+ *         rest => for future use (ignore for now)
+ *
+ * In case of 0x02 the following byte contains the number of the instruction to be executed
+ * Byte 5: 0x00 => other values are ignored
+ * Byte 6: 0x00 => Send a list of all instructions
+ *         0x01 => Execute first instruction etc
+ *         rest => If the instruction does not exists send an "Error, missing instruction."
+ *
+ * In case of 0x03 / 0x05 the following two bytes contain the port number (as BE int value), and subsequently the port address (as string)
+ * Byte 5: MSB of remote port
+ * Byte 6: LSB of remote port
+ * rest: null terminated string of address.
+ *
+ * Note: Total message should not exceed 255 bytes (rest is truncated)
+ *       Total address should not exceed 192 bytes (rest is truncated)
+ */
 
-static char monitor_report[MONITOR_SIZE]; /* monitor report as a JSON object */
+
+
+static char monitor_report[MONITOR_SIZE]; /* monitor report  */
 
 static int sock_monitor; /* socket for downstream traffic */
+
+static pid_t web_pid  = 0;
+static pid_t ssh_pid  = 0;
 
 /* monitor thread */
 static pthread_t thrid_monitor;
@@ -62,6 +97,110 @@ static void printBuffer(uint8_t *b, uint8_t len)
 
 
 static void thread_monitor(void);
+
+
+static void system_call(const char * command, char * response, size_t respSize)
+{ MSG("INFO: System call: %s\n",command);
+  char buff[256];
+  FILE *request;
+  size_t recvcnt = 0;
+  buff[255] = (char) 0;
+  request = popen(command, "r");
+  if (request == NULL)
+  { snprintf(response,respSize,"Could not execute command: %s\n",command); }
+  else
+  { while(!feof(request) && (recvcnt + sizeof(buff) < respSize))
+    { if (fgets(buff, sizeof(buff)-1, request) != NULL)
+  	  { size_t len = strlen(buff);
+	    memcpy(response+recvcnt,buff,len+1);
+  	    recvcnt += len; } }
+    response[recvcnt] = (char) 0; }
+  pclose(request); }
+
+
+// Note: you must have key installed in the local machine.
+// TODO: Suppress password request
+// TODO: Option -N does not seem to work within execl. decouple stind on that process.
+static pid_t system_tunnel_start(const char * address, const uint16_t remotePort, const uint16_t localPort)
+{ char ssh[64] = "/usr/bin/ssh";  // dit moet in de config worden opgegeven
+  char bridge[256];
+  //snprintf(args,sizeof(args),"-N -R %u:localhost:%u %s",remotePort,localPort,address);
+  snprintf(bridge,sizeof(bridge),"%u:localhost:%u",remotePort,localPort);
+    MSG("INFO: SSH bridge = %s\n",bridge);
+  pid_t pid = fork();
+  switch(pid)
+  { case -1:
+	  MSG("WARNING: Tunnel could not be setup.\n");
+	  return 0;
+    case 0:
+      execl(ssh,"-N","-R",bridge,address,NULL);
+      MSG("WARNING: Tunnel died.\n");
+      return 0;
+    default:
+      MSG("INFO: Tunnel started.\n");
+      return pid; } }
+
+static void system_tunnel_stop(pid_t pid)
+{ if (pid > 0)
+  { if ((kill(pid,SIGQUIT)==0) || (kill(pid,SIGKILL)==0))
+    { MSG("INFO: Tunnel terminated.\n"); }
+    else
+    { MSG("WARNING: Tunnel could not be terminated.\n"); } }
+  else
+  { MSG("WARNING: No tunnel to terminate.\n"); }
+}
+
+
+static void open_ssh(const char * address, const uint16_t remotePort)
+{ MSG("INFO: Opening tunnel for SSH on server %s at port %u\n",address,remotePort);
+  int ssh = 22; // dit moet in de config worden opgegeven, and note: only root may forward this port
+  if (ssh_pid > 0)
+  { MSG("WARNING: Only one SSH tunnel can be active at a time on local port %i.\n",ssh); }
+  else
+  { ssh_pid = system_tunnel_start(address,remotePort,ssh); } }
+
+static void close_ssh()
+{ system_tunnel_stop(ssh_pid); }
+
+
+static void open_web(const char * address, const uint16_t remotePort)
+{ MSG("INFO: Opening tunnel for WEB on server %s at port %u\n",address,remotePort);
+  int web = 80; // dit moet in de config worden opgegeven , and note: only root may forward this port
+  if (web_pid > 0)
+  { MSG("WARNING: Only one SSH tunnel can be active at a time on local port %i.\n",web); }
+  else
+  { web_pid = system_tunnel_start(address,remotePort,web); } }
+
+static void close_web()
+{ system_tunnel_stop(web_pid > 0); }
+
+
+static void printCmdList(const char * instructions[], unsigned int instCnt, char * response, size_t respSize)
+{ unsigned int i;
+  size_t respcnt = 0;
+  for (i=0; i<instCnt; i++)
+  { size_t len = strlen(instructions[i]);
+    snprintf(response+respcnt,respSize-respcnt,"%s\n",instructions[i]);
+    respcnt += len+1; } }
+
+
+static void handleCommand(const uint8_t cmd, const uint16_t action, const char * arguments, char  * response, size_t respSize)
+{ const char * instructions[] = { "df -m", "ps aux" }; // dit moet in de config worden opgegeven
+  unsigned int size = sizeof(instructions) / sizeof(*instructions);
+  MSG("Size of instruction = %u\n",size);
+  switch(cmd)
+  { case 0x02:
+	  if      (action == 0)   { printCmdList(instructions,size,response,respSize); }
+	  else if (action<=size)  { system_call(instructions[action-1],response,respSize); }
+	  else                    { snprintf(response,respSize,"Could not execute command with invalid action.\n"); }
+	  break;
+    case 0x03: open_ssh(arguments,action); break;
+    case 0x04: close_ssh(); break;
+    case 0x05: open_web(arguments,action); break;
+    case 0x06: close_web(); break;
+    default: MSG("WARNING: Unrecognized command, ignoring.");
+  } }
+
 
 
 /* -------------------------------------------------------------------------- */
@@ -164,6 +303,9 @@ static void thread_monitor(void)
     *(uint32_t *)(buff_req + 4) = 0;
     *(uint32_t *)(buff_req + 8) = 0;
 
+    char response[4*256]; // UDP messages are generally not allowed to be very large. to be safe, keep them under 512 bytes.
+    response[0] = PROTOCOL_VERSION;
+    response[3] = MNTR_RSPN;
 
     while (monitor_run)
     {   /* send PULL request and record time */
@@ -171,7 +313,7 @@ static void thread_monitor(void)
         send(sock_monitor, (void *)buff_req, sizeof buff_req, 0);
         clock_gettime(CLOCK_MONOTONIC, &send_time);
         req_ack = false;
-        MSG("MONITOR LOOP");
+        MSG("DEBUG: MONITOR LOOP\n");
         /* listen to packets and process them until a new PULL request must be sent */
         recv_time = send_time;
         while ((int)difftimespec(recv_time, send_time) < MNTR_CALL_SECS)
@@ -186,19 +328,24 @@ static void thread_monitor(void)
             { continue; }
 
             /* if the datagram does not respect protocol, just ignore it */
-            if ( (msg_len != MNTR_RQST_MSGSIZE) || (buff_down[0] != PROTOCOL_VERSION) )
+            if ( (msg_len >= MNTR_RQST_MSGSIZE) || (buff_down[0] != PROTOCOL_VERSION) || (buff_down[3] != MNTR_DATA) )
             { MSG("WARNING: [monitor] ignoring invalid request\n");
               continue; }
 
             /* the datagram is a MNTR_DATA */
             buff_down[msg_len] = 0; /* add string terminator, just to be safe */
 
-            bool start_info = (buff_down[5] == 1);
-            bool start_ssh = (buff_down[6] == 1);
+            uint8_t command   = (uint8_t) buff_down[4];
+            uint16_t action   = (uint16_t) buff_down[5] << 8 | (uint16_t) buff_down[6];
+            char * arguments  = &buff_down[7];
 
-            if (start_info) MSG("INFO: [monitor] please send info. \n");
-            if (start_ssh) MSG("INFO: [monitor] please open ssh tunnel. \n");
-
+            if (command > 0)
+            { handleCommand(command,action,arguments,&response[4],sizeof(response)-4);
+              size_t len = strlen(&response[4]);
+              response[1] = (char) 0; //(len >> 8) & 0xFF; // to be implemented
+              response[2] = (char) 0; //len & 0xFF; // to be implemented
+              MSG("DEBUG: response len = %u",len);
+              if (len > 0) send(sock_monitor, (void *)response, len+4, 0); }
 
            } }
 
