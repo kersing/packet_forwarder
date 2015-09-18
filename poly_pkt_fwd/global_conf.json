@@ -200,11 +200,11 @@
         /* Devices */
         "gps": true,
         "beacon": false,
-        "monitor": true,
+        "monitor": false,
         "upstream": true,
         "downstream": false,
-        "ghoststream": true,
-        "radiostream": false,
+        "ghoststream": false,
+        "radiostream": true,
         "statusstream": true,
         /* node server */
         "server_address": "127.0.0.1",
