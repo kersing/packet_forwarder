@@ -8,6 +8,13 @@
  *  Maintainer: Ruud Vlaming
  */
 
+/* fix an issue between POSIX and C99 */
+#ifdef __MACH__
+#elif __STDC_VERSION__ >= 199901L
+	#define _XOPEN_SOURCE 600
+#else
+	#define _XOPEN_SOURCE 500
+#endif
 
 #include <stdint.h>     /* C99 types */
 #include <stdbool.h>    /* bool type */
@@ -44,11 +51,11 @@ struct timeval ghost_timeout = {0, (200 * 1000)}; /* non critical for throughput
 
 static pthread_mutex_t cb_ghost = PTHREAD_MUTEX_INITIALIZER; /* control access to the ghoststream measurements */
 
-static int rxpktSize = sizeof(struct lgw_pkt_rx_s);
-static int txpktSize = sizeof(struct lgw_pkt_tx_s);
+//!static int rxpktSize = sizeof(struct lgw_pkt_rx_s);
+//!static int txpktSize = sizeof(struct lgw_pkt_tx_s);
 
 static uint8_t buffRX[GHST_RX_BUFFSIZE*GHST_NM_RCV]; /* circular buffer for receiving packets */
-static uint8_t buffTX[GHST_TX_BUFFSIZE*GHST_NM_RCV]; /* circular buffer for sending packets */
+//!static uint8_t buffTX[GHST_TX_BUFFSIZE*GHST_NM_RCV]; /* circular buffer for sending packets */
 
 static uint8_t ghst_end;                 /* end of circular packet buffer  */
 static uint8_t ghst_bgn;                 /* begin of circular packet buffer */
@@ -58,11 +65,15 @@ static int sock_ghost; /* socket for downstream traffic */
 /* ghost thread */
 static pthread_t thrid_ghost;
 
-
+/* for debugging purposes. */
+static void printBuffer(uint8_t *b, uint8_t len)  __attribute__ ((unused));
 static void printBuffer(uint8_t *b, uint8_t len)
-{ int i;
+{
+  int i;
   for (i=0; i<len; i++) { printf("%i,",b[i]);  } }
 
+/* for debugging purposes. */
+static void printRX(struct lgw_pkt_rx_s *p)  __attribute__ ((unused));
 static void printRX(struct lgw_pkt_rx_s *p)
 { printf(
     "  p->freq_hz    = %i\n"
@@ -96,7 +107,7 @@ typedef union
 static uint32_t u32(uint8_t *p, uint8_t i) { return (uint32_t)(p[i+3]) + ((uint32_t)(p[i+2])<<8) + ((uint32_t)(p[i+1])<<16) + ((uint32_t)(p[i])<<24);  }
 static uint16_t u16(uint8_t *p, uint8_t i) { return (uint16_t)p[i+1] + ((uint16_t)p[i]<<8);  }
 static uint8_t u8(uint8_t *p, uint8_t i)   { return p[i]; }
-static eflt(uint8_t *p, uint8_t i)
+static float eflt(uint8_t *p, uint8_t i)
 { mix uf;
   uf.u = u32(p,i);
   return uf.f; }
@@ -252,7 +263,8 @@ static void thread_ghost(void)
     int msg_len;
 
     /* protocol variables */
-    bool req_ack = false; /* keep track of whether PULL_DATA was acknowledged or not */
+    //TODO: repair the logic on this variable
+    //!bool req_ack = false; /* keep track of whether PULL_DATA was acknowledged or not */
 
     /* set downstream socket RX timeout */
     i = setsockopt(sock_ghost, SOL_SOCKET, SO_RCVTIMEO, (void *)&ghost_timeout, sizeof ghost_timeout);
@@ -276,7 +288,7 @@ static void thread_ghost(void)
         // TODO zend later hier de data voor de nodes, nu alleen een pullreq.
         send(sock_ghost, (void *)buff_req, sizeof buff_req, 0);
         clock_gettime(CLOCK_MONOTONIC, &send_time);
-        req_ack = false;
+        //!req_ack = false;
         MSG("DEBUG: GHOST LOOP\n");
         /* listen to packets and process them until a new PULL request must be sent */
         recv_time = send_time;

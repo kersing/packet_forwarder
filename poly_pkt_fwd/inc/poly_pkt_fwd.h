@@ -8,8 +8,11 @@
 #ifndef _POLY_PKT_FWD_H_
 #define _POLY_PKT_FWD_H_
 
+
 /* -------------------------------------------------------------------------- */
 /* --- MAC OSX Extensions  -------------------------------------------------- */
+
+struct timespec;
 
 #ifdef __MACH__
 #define CLOCK_REALTIME 0

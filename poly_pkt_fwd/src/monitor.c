@@ -8,6 +8,13 @@
  *  Maintainer: Ruud Vlaming
  */
 
+/* fix an issue between POSIX and C99 */
+#ifdef __MACH__
+#elif __STDC_VERSION__ >= 199901L
+	#define _XOPEN_SOURCE 600
+#else
+	#define _XOPEN_SOURCE 500
+#endif
 
 #include <stdint.h>     /* C99 types */
 #include <stdbool.h>    /* bool type */
@@ -43,7 +50,7 @@ volatile bool monitor_run = false;      /* false -> monitor thread terminates cl
 
 struct timeval monitor_timeout = {0, (200 * 1000)}; /* non critical for throughput */
 
-static pthread_mutex_t cb_monitor = PTHREAD_MUTEX_INITIALIZER; /* control access to the monitor measurements */
+//!static pthread_mutex_t cb_monitor = PTHREAD_MUTEX_INITIALIZER; /* control access to the monitor measurements */
 
 /* Format
  * Bytes 0,1,2,3:  Protocol definition
@@ -82,7 +89,7 @@ static pthread_mutex_t cb_monitor = PTHREAD_MUTEX_INITIALIZER; /* control access
 
 
 
-static char monitor_report[MONITOR_SIZE]; /* monitor report  */
+//!static char monitor_report[MONITOR_SIZE]; /* monitor report  */
 
 static int sock_monitor; /* socket for downstream traffic */
 
@@ -93,14 +100,7 @@ static pid_t ngrok_pid  = 0;
 /* monitor thread */
 static pthread_t thrid_monitor;
 
-
-static void printBuffer(uint8_t *b, uint8_t len)
-{ int i;
-  for (i=0; i<len; i++) { printf("%i,",b[i]);  } }
-
-
 static void thread_monitor(void);
-
 
 static void system_call(const char * command, char * response, size_t respSize)
 { MSG("INFO: System call: %s\n",command);
@@ -318,7 +318,8 @@ static void thread_monitor(void)
     int msg_len;
 
     /* protocol variables */
-    bool req_ack = false; /* keep track of whether PULL_DATA was acknowledged or not */
+    //TODO: repair the logic on this variable
+    //bool req_ack = false; /* keep track of whether PULL_DATA was acknowledged or not */
 
     /* set downstream socket RX timeout */
     i = setsockopt(sock_monitor, SOL_SOCKET, SO_RCVTIMEO, (void *)&monitor_timeout, sizeof monitor_timeout);
@@ -342,7 +343,7 @@ static void thread_monitor(void)
         // TODO zend later hier de data voor de nodes, nu alleen een pullreq.
         send(sock_monitor, (void *)buff_req, sizeof buff_req, 0);
         clock_gettime(CLOCK_MONOTONIC, &send_time);
-        req_ack = false;
+        //req_ack = false;
         MSG("DEBUG: MONITOR LOOP\n");
         /* listen to packets and process them until a new PULL request must be sent */
         recv_time = send_time;
@@ -367,7 +368,7 @@ static void thread_monitor(void)
 
             uint8_t command   = (uint8_t) buff_down[4];
             uint16_t action   = (uint16_t) buff_down[5] << 8 | (uint16_t) buff_down[6];
-            char * arguments  = &buff_down[7];
+            char * arguments  = (char *) buff_down+7;
 
             if (command > 0)
             { handleCommand(command,action,arguments,&response[4],sizeof(response)-4);
