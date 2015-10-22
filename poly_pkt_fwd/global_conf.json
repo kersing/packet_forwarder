@@ -229,6 +229,14 @@
         "ghost_port": 1918,
         /* Monitor configuration */
         "monitor_address": "127.0.0.1",
-        "monitor_port": 2008   
+        "monitor_port": 2008,
+        /* Platform definition, put a asterix here to call the system value, max 24 chars. */
+        "platform": "*", 
+        /* Email of gateway operator, max 40 chars*/
+        "contact_email": "", 
+        /* Public description of this device, max 64 chars */
+        "description": "" 
+        
+           
     }
 }

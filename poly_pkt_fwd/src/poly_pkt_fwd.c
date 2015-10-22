@@ -76,6 +76,10 @@ Maintainer: Ruud Vlaming
   #define VERSION_STRING "undefined"
 #endif
 
+#ifndef DISPLAY_PLATFORM
+  #define DISPLAY_PLATFORM "undefined"
+#endif
+
 #define MAX_SERVERS		    4 /* Support up to 4 servers, more does not seem realistic */
 
 //TODO: This default values are a code-smell, remove.
@@ -110,7 +114,7 @@ Maintainer: Ruud Vlaming
 #define MIN_FSK_PREAMB	3 /* minimum FSK preamble length for this application */
 #define STD_FSK_PREAMB	4
 
-#define STATUS_SIZE		200
+#define STATUS_SIZE		328
 #define TX_BUFF_SIZE	((540 * NB_PKT_MAX) + 30 + STATUS_SIZE)
 
 /* -------------------------------------------------------------------------- */
@@ -229,6 +233,10 @@ static bool ghoststream_enabled  = false;   /* controls the data flow from ghost
 static bool radiostream_enabled  = true;    /* controls the data flow from radio-node to server       */
 static bool statusstream_enabled = true;    /* controls the data flow of status information to server */
 
+/* Informal status fields */
+static char platform[24]    = DISPLAY_PLATFORM;  /* platform definition */
+static char email[40]       = "";                /* used for contact email */
+static char description[64] = "";                /* used for free form description */
 
 /* -------------------------------------------------------------------------- */
 /* --- MAC OSX Extensions  -------------------------------------------------- */
@@ -873,6 +881,27 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Auto-quit after %u non-acknowledged PULL_DATA\n", autoquit_threshold);
 	}
 	
+	/* Platform read and override */
+	str = json_object_get_string(conf_obj, "platform");
+	if ((str != NULL) && (!strncmp(str, "*", 1))) {
+		strncpy(platform, str, sizeof platform);
+		MSG("INFO: Platform configured to \"%s\"\n", platform);
+	}
+
+	/* Read of contact email */
+	str = json_object_get_string(conf_obj, "contact_email");
+	if (str != NULL) {
+		strncpy(email, str, sizeof email);
+		MSG("INFO: Contact email configured to \"%s\"\n", email);
+	}
+
+	/* Read of description */
+	str = json_object_get_string(conf_obj, "description");
+	if (str != NULL) {
+		strncpy(description, str, sizeof description);
+		MSG("INFO: Description email configured to \"%s\"\n", description);
+	}
+
 	/* free JSON parsing data structure */
 	json_value_free(root_val);
 	return 0;
@@ -1322,13 +1351,12 @@ int main(void)
 		printf("##### END #####\n");
 		
 		/* generate a JSON report (will be sent to server by upstream thread) */
-		//TODO Injongen velden: mail, pfrm, desc, let op STATUS_SIZE wordt dan 128 bytes langer!
 		if (statusstream_enabled == true) {
 			pthread_mutex_lock(&mx_stat_rep);
 			if ((gps_enabled == true) && (coord_ok == true)) {
-				snprintf(status_report, STATUS_SIZE, "\"stat\":{\"time\":\"%s\",\"lati\":%.5f,\"long\":%.5f,\"alti\":%i,\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u}", stat_timestamp, cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok);
+				snprintf(status_report, STATUS_SIZE, "\"stat\":{\"time\":\"%s\",\"lati\":%.5f,\"long\":%.5f,\"alti\":%i,\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}", stat_timestamp, cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
 			} else {
-				snprintf(status_report, STATUS_SIZE, "\"stat\":{\"time\":\"%s\",\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u}", stat_timestamp, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok);
+				snprintf(status_report, STATUS_SIZE, "\"stat\":{\"time\":\"%s\",\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}", stat_timestamp, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
 			}
 			report_ready = true;
 			pthread_mutex_unlock(&mx_stat_rep);
