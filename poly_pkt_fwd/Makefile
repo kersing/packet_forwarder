@@ -12,7 +12,7 @@ CROSS_COMPILE ?=
 # must get library build option to know if mpsse must be linked or not
 
 include $(LGW_PATH)/library.cfg
-RELEASE_VERSION := `cat ../VERSION`
+RELEASE_VERSION := $(shell cat ../VERSION)
 
 ### Constant symbols
 

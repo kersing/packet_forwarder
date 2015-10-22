@@ -126,7 +126,7 @@ static bool fwd_error_pkt = false; /* packets with PAYLOAD CRC ERROR are NOT for
 static bool fwd_nocrc_pkt = false; /* packets with NO PAYLOAD CRC are NOT forwarded */
 
 /* network configuration variables */
-static uint8_t serv_count = 0; /* Counter for servers */
+static uint8_t serv_count = 0; /* Counter for defined servers */
 static uint64_t lgwm = 0; /* Lora gateway MAC address */
 static char serv_addr[MAX_SERVERS][64]; /* addresses of the server (host name or IPv4/IPv6) */
 static char serv_port_up[MAX_SERVERS][8]; /* servers port for upstream traffic */
@@ -612,6 +612,9 @@ static int parse_gateway_configuration(const char * conf_file) {
 	}
 
 	/* Obtain multiple servers hostnames and ports */
+	//TODO: Maak hier een veld 'enabled' zodat je servers kunt aan/uit zetten zonder
+	// de data te wissen. Er kunnen dan nog steeds maximaal 4 actief zijn, maar je kunt
+	// er wel meer definieren.
 	JSON_Object *nw_server = NULL;
 	servers = json_object_get_array(conf_obj, "servers");
 	if (servers != NULL && serv_count > 0)  MSG("INFO: Array of servers may overwrite specific server.\n");
@@ -846,7 +849,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 	if (json_value_get_type(val) == JSONBoolean) {
 		beacon_enabled = (bool)json_value_get_boolean(val);
 	}
-	if (radiostream_enabled == true) {
+	if (beacon_enabled == true) {
 		MSG("INFO: Beacon is enabled\n");
 	} else {
 		MSG("INFO: Beacon is disabled\n");
@@ -857,7 +860,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 	if (json_value_get_type(val) == JSONBoolean) {
 		monitor_enabled = (bool)json_value_get_boolean(val);
 	}
-	if (radiostream_enabled == true) {
+	if (monitor_enabled == true) {
 		MSG("INFO: Monitor is enabled\n");
 	} else {
 		MSG("INFO: Monitor is disabled\n");
@@ -1022,7 +1025,6 @@ int main(void)
 	}
 	
 	/* Start GPS a.s.a.p., to allow it to lock */
-	//TODO: Change meaning of gps_enabled.
 	if (gps_enabled == true) {
 		if (gps_fake_enable == false) {
 			i = lgw_gps_enable(gps_tty_path, NULL, 0, &gps_tty_fd);
@@ -1057,6 +1059,9 @@ int main(void)
 	hints.ai_socktype = SOCK_DGRAM;
 	
 	/* Loop through all servers */
+	//TODO Not this fails for servers that do not yet exist. This was logical for a one router
+	// implementation, but it is not for an implementation that allows for multiple routers.
+	// These must be able to fail, and must be retried after some grace period.
 	for (ic = 0; ic < serv_count; ic++) {
 
 		/* look for server address w/ upstream port */
@@ -1149,6 +1154,8 @@ int main(void)
 	}
 	if (downstream_enabled == true) {
 		for (ic = 0; ic < serv_count; ic++) {
+			//TODO: BUG: All down threads utilize the same ID: thrid_down. Although this is not a problem while running
+			//      it is when these are canceld. Therefore we must make an array here also.
 			i = pthread_create( &thrid_down, NULL, (void * (*)(void *))thread_down, (void *) (long) ic);
 			if (i != 0) {
 				MSG("ERROR: [main] impossible to create downstream thread\n");
@@ -1315,6 +1322,7 @@ int main(void)
 		printf("##### END #####\n");
 		
 		/* generate a JSON report (will be sent to server by upstream thread) */
+		//TODO Injongen velden: mail, pfrm, desc, let op STATUS_SIZE wordt dan 128 bytes langer!
 		if (statusstream_enabled == true) {
 			pthread_mutex_lock(&mx_stat_rep);
 			if ((gps_enabled == true) && (coord_ok == true)) {
@@ -1329,6 +1337,7 @@ int main(void)
 	
 	/* wait for upstream thread to finish (1 fetch cycle max) */
 	if (upstream_enabled == true) pthread_join(thrid_up, NULL);
+	//TODO: Is a join not better here, also thrid_down must become an array (this is a bug, see remark at creation!)
 	if (downstream_enabled == true) pthread_cancel(thrid_down); /* don't wait for downstream thread */
 	if (ghoststream_enabled == true) ghost_stop();
 	if (monitor_enabled == true) monitor_stop();
@@ -2016,7 +2025,9 @@ void thread_down(void* pic) {
 			
 			/* if the datagram does not respect protocol, just ignore it */
 			if ((msg_len < 4) || (buff_down[0] != PROTOCOL_VERSION) || ((buff_down[3] != PKT_PULL_RESP) && (buff_down[3] != PKT_PULL_ACK))) {
-				MSG("WARNING: [down] ignoring invalid packet\n");
+				//TODO Investigate why this message is logged only at shutdown, i.e. all messages produced here are collected and
+				//     spit out at program termination. This can lead to an unstable application.
+				//MSG("WARNING: [down] ignoring invalid packet\n");
 				continue;
 			}
 			
