@@ -1222,8 +1222,6 @@ int main(void)
 	}
 	if (downstream_enabled == true) {
 		for (ic = 0; ic < serv_count; ic++) if (serv_live[ic] == true) {
-			//TODO: BUG: All down threads utilize the same ID: thrid_down. Although this is not a problem while running
-			//      it is when these are canceld. Therefore we must make an array here also.
 			i = pthread_create( &thrid_down[ic], NULL, (void * (*)(void *))thread_down, (void *) (long) ic);
 			if (i != 0) {
 				MSG("ERROR: [main] impossible to create downstream thread\n");
@@ -1520,7 +1518,7 @@ void thread_up(void) {
 			continue;
 		}
 		
-		//TODO: is this okay, can time be recruted from the local system if gps is not working?
+		//TODO: is this okay, can time be recruited from the local system if gps is not working?
 		/* get a copy of GPS time reference (avoid 1 mutex per packet) */
 		if ((nb_pkt > 0) && (gps_active == true)) {
 			pthread_mutex_lock(&mx_timeref);
@@ -1607,8 +1605,8 @@ void thread_up(void) {
 			}
 
 			/* Packet RX time (GPS based), 37 useful chars */
-			//TODO: Van onderstaande blocken kan er maar 1 worden uitgevoerd. Beslis op basis van GPS aanwezigheid
-			// Dit is nog niet goed gecodeerd
+			//TODO: From the block below only one can be exectuted, decide on the presence of GPS.
+			// This has not been coded well.
 			if (gps_active) {
 				if (ref_ok == true) {
 					/* convert packet timestamp to UTC absolute time */

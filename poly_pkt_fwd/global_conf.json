@@ -203,11 +203,11 @@
         "monitor": false,
         "upstream": true,
         "downstream": true,
-        "ghoststream": true,
-        "radiostream": false,
+        "ghoststream": false,
+        "radiostream": true,
         "statusstream": true,
         /* node server */
-        "server_address": "127.0.0.1", 
+        "server_address": "127.0.0.1",
         "serv_port_up": 1680,
         "serv_port_down": 1681,
         /* node servers for poly packet server (max 4) */
