@@ -344,7 +344,7 @@ static void thread_monitor(void)
         send(sock_monitor, (void *)buff_req, sizeof buff_req, 0);
         clock_gettime(CLOCK_MONOTONIC, &send_time);
         //req_ack = false;
-        MSG("DEBUG: MONITOR LOOP\n");
+        //MSG("DEBUG: MONITOR LOOP\n");
         /* listen to packets and process them until a new PULL request must be sent */
         recv_time = send_time;
         while ((int)difftimespec(recv_time, send_time) < MNTR_CALL_SECS)

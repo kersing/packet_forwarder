@@ -289,7 +289,7 @@ static void thread_ghost(void)
         send(sock_ghost, (void *)buff_req, sizeof buff_req, 0);
         clock_gettime(CLOCK_MONOTONIC, &send_time);
         //!req_ack = false;
-        MSG("DEBUG: GHOST LOOP\n");
+        //MSG("DEBUG: GHOST LOOP\n");
         /* listen to packets and process them until a new PULL request must be sent */
         recv_time = send_time;
         while ((int)difftimespec(recv_time, send_time) < NODE_CALL_SECS)

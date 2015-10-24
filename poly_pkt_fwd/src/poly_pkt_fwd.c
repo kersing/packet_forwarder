@@ -135,6 +135,7 @@ static uint64_t lgwm = 0; /* Lora gateway MAC address */
 static char serv_addr[MAX_SERVERS][64]; /* addresses of the server (host name or IPv4/IPv6) */
 static char serv_port_up[MAX_SERVERS][8]; /* servers port for upstream traffic */
 static char serv_port_down[MAX_SERVERS][8]; /* servers port for downstream traffic */
+static bool serv_live[MAX_SERVERS]; /* Register if the server could be defined. */
 static int keepalive_time = DEFAULT_KEEPALIVE; /* send a PULL_DATA request every X seconds, negative = disabled */
 
 /* statistics collection configuration variables */
@@ -570,10 +571,13 @@ static int parse_gateway_configuration(const char * conf_file) {
 	JSON_Value *root_val;
 	JSON_Object *conf_obj = NULL;
 	JSON_Value *val = NULL; /* needed to detect the absence of some fields */
+	JSON_Value *val1 = NULL; /* needed to detect the absence of some fields */
+	JSON_Value *val2 = NULL; /* needed to detect the absence of some fields */
 	JSON_Array *servers = NULL;
 	const char *str; /* pointer to sub-strings in the JSON data */
 	unsigned long long ull = 0;
-	int ic; /* Server counter*/
+	int i; /* Loop variable */
+	int ic; /* Server counter */
 	
 	/* try to parse JSON */
 	root_val = json_parse_file_with_comments(conf_file);
@@ -599,65 +603,80 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: gateway MAC address is configured to %016llX\n", ull);
 	}
 	
-	/* server hostname or IP address (optional) */
-	str = json_object_get_string(conf_obj, "server_address");
-	if (str != NULL) {
-		serv_count = 1;
-		strncpy(serv_addr[0], str, sizeof serv_addr[0]);
-		MSG("INFO: server hostname or IP address is configured to \"%s\"\n", serv_addr[0]);
-	}
-
-	/* get up and down ports (optional) */
-	val = json_object_get_value(conf_obj, "serv_port_up");
-	if (val != NULL) {
-		snprintf(serv_port_up[0], sizeof serv_port_up[0], "%u", (uint16_t)json_value_get_number(val));
-		MSG("INFO: upstream port is configured to \"%s\"\n", serv_port_up[0]);
-	}
-	val = json_object_get_value(conf_obj, "serv_port_down");
-	if (val != NULL) {
-		snprintf(serv_port_down[0], sizeof serv_port_down[0], "%u", (uint16_t)json_value_get_number(val));
-		MSG("INFO: downstream port is configured to \"%s\"\n", serv_port_down[0]);
-	}
-
-	/* Obtain multiple servers hostnames and ports */
-	//TODO: Maak hier een veld 'enabled' zodat je servers kunt aan/uit zetten zonder
-	// de data te wissen. Er kunnen dan nog steeds maximaal 4 actief zijn, maar je kunt
-	// er wel meer definieren.
+	/* Obtain multiple servers hostnames and ports from array */
 	JSON_Object *nw_server = NULL;
 	servers = json_object_get_array(conf_obj, "servers");
-	if (servers != NULL && serv_count > 0)  MSG("INFO: Array of servers may overwrite specific server.\n");
 	if (servers != NULL) {
+		/* serv_count represents the maximal number of servers to be read. */
 		serv_count = json_array_get_count(servers);
 		MSG("INFO: Found %i servers in array.\n", serv_count);
-		if (serv_count > MAX_SERVERS) MSG("WARN: Only %i servers allowed, ignoring rest.", MAX_SERVERS);
-		for (ic = 0; ic < serv_count  && ic < MAX_SERVERS; ic++) {
+		ic = 0;
+		for (i = 0; i < serv_count  && ic < MAX_SERVERS; i++) {
 			nw_server = json_array_get_object(servers,ic);
 			str = json_object_get_string(nw_server, "server_address");
-			/* server hostname or IP address (optional) */
-			if (str != NULL) {
-				strncpy(serv_addr[ic], str, sizeof serv_addr[ic]);
-				MSG("INFO: server %i hostname or IP address is configured to \"%s\"\n", ic, serv_addr[ic]);
+			val = json_object_get_value(nw_server, "serv_enabled");
+			val1 = json_object_get_value(nw_server, "serv_port_up");
+			val2 = json_object_get_value(nw_server, "serv_port_down");
+			/* Try to read the fields */
+			if (str != NULL)  strncpy(serv_addr[ic], str, sizeof serv_addr[ic]);
+			if (val1 != NULL) snprintf(serv_port_up[ic], sizeof serv_port_up[ic], "%u", (uint16_t)json_value_get_number(val1));
+			if (val2 != NULL) snprintf(serv_port_down[ic], sizeof serv_port_down[ic], "%u", (uint16_t)json_value_get_number(val2));
+			/* If there is no server name we can only silently progress to the next entry */
+			if (str == NULL) {
+				continue;
 			}
-			/* get up and down ports (optional) */
-			val = json_object_get_value(nw_server, "serv_port_up");
-			if (val != NULL) {
-				snprintf(serv_port_up[ic], sizeof serv_port_up[ic], "%u", (uint16_t)json_value_get_number(val));
-				MSG("INFO: upstream port on server %i is configured to \"%s\"\n", ic, serv_port_up[ic]);
+			/* If there are no ports report and progress to the next entry */
+			else if ((val1 == NULL) || (val2 == NULL)) {
+				MSG("INFO: Skipping server \"%s\" with at least one invalid port number\n", serv_addr[ic]);
+				continue;
 			}
-			val = json_object_get_value(nw_server, "serv_port_down");
-			if (val != NULL) {
-				snprintf(serv_port_down[ic], sizeof serv_port_down[ic], "%u", (uint16_t)json_value_get_number(val));
-				MSG("INFO: downstream port on server %i is configured to \"%s\"\n", ic, serv_port_down[ic]);
+            /* If the server was explicitly disabled, report and progress to the next entry */
+			else if ( (val != NULL) && ((json_value_get_type(val)) == JSONBoolean) && ((bool)json_value_get_boolean(val) == false )) {
+				MSG("INFO: Skipping disabled server \"%s\"\n", serv_addr[ic]);
+				continue;
 			}
+			/* All test survived, this is a valid server, report and increase server counter. */
+			MSG("INFO: Server %i configured to \"%s\", with port up \"%s\" and port down \"%s\"\n", ic, serv_addr[ic],serv_port_up[ic],serv_port_down[ic]);
+			/* The server may be valid, it is not yet live. */
+			serv_live[ic] = false;
+			ic++;
+		}
+		serv_count = ic;
+	}
+
+	/* If there are no servers in server array fall back to old fashioned single server definition. */
+	if (serv_count == 0)
+	{	/* server hostname or IP address (optional) */
+		str = json_object_get_string(conf_obj, "server_address");
+		if (str != NULL) {
+			serv_count = 1;
+			serv_live[0] = false;
+			strncpy(serv_addr[0], str, sizeof serv_addr[0]);
+			MSG("INFO: server hostname or IP address is configured to \"%s\"\n", serv_addr[0]);
+		}
+
+		/* get up and down ports (optional) */
+		val = json_object_get_value(conf_obj, "serv_port_up");
+		if (val != NULL) {
+			snprintf(serv_port_up[0], sizeof serv_port_up[0], "%u", (uint16_t)json_value_get_number(val));
+			MSG("INFO: upstream port is configured to \"%s\"\n", serv_port_up[0]);
+		}
+		val = json_object_get_value(conf_obj, "serv_port_down");
+		if (val != NULL) {
+			snprintf(serv_port_down[0], sizeof serv_port_down[0], "%u", (uint16_t)json_value_get_number(val));
+			MSG("INFO: downstream port is configured to \"%s\"\n", serv_port_down[0]);
 		}
 	}
 
+
 	/* Using the defaults in case no values are present in the JSON */
+	//TODO: Eliminate this default behavior, the server should be well configured or stop.
 	if (serv_count == 0) {
 		MSG("INFO: Using defaults for server and ports (specific ports are ignored if no server is defined)");
 		strncpy(serv_addr[0],STR(DEFAULT_SERVER),sizeof(STR(DEFAULT_SERVER)));
 		strncpy(serv_port_up[0],STR(DEFAULT_PORT_UP),sizeof(STR(DEFAULT_PORT_UP)));
 		strncpy(serv_port_down[0],STR(DEFAULT_PORT_DW),sizeof(STR(DEFAULT_PORT_DW)));
+		serv_live[0] = false;
 		serv_count = 1;
 	}
 
@@ -883,8 +902,8 @@ static int parse_gateway_configuration(const char * conf_file) {
 	
 	/* Platform read and override */
 	str = json_object_get_string(conf_obj, "platform");
-	if ((str != NULL) && (!strncmp(str, "*", 1))) {
-		strncpy(platform, str, sizeof platform);
+	if (str != NULL) {
+		if (strncmp(str, "*", 1) != 0) { strncpy(platform, str, sizeof platform); }
 		MSG("INFO: Platform configured to \"%s\"\n", platform);
 	}
 
@@ -899,7 +918,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 	str = json_object_get_string(conf_obj, "description");
 	if (str != NULL) {
 		strncpy(description, str, sizeof description);
-		MSG("INFO: Description email configured to \"%s\"\n", description);
+		MSG("INFO: Description configured to \"%s\"\n", description);
 	}
 
 	/* free JSON parsing data structure */
@@ -972,7 +991,7 @@ int main(void)
 	
 	/* threads */
 	pthread_t thrid_up;
-	pthread_t thrid_down;
+	pthread_t thrid_down[MAX_SERVERS];
 	pthread_t thrid_gps;
 	pthread_t thrid_valid;
 	
@@ -1087,17 +1106,16 @@ int main(void)
 	hints.ai_family = AF_UNSPEC; /* should handle IP v4 or v6 automatically */
 	hints.ai_socktype = SOCK_DGRAM;
 	
-	/* Loop through all servers */
-	//TODO Not this fails for servers that do not yet exist. This was logical for a one router
-	// implementation, but it is not for an implementation that allows for multiple routers.
-	// These must be able to fail, and must be retried after some grace period.
+	/* Loop through all possible servers */
 	for (ic = 0; ic < serv_count; ic++) {
 
 		/* look for server address w/ upstream port */
 		i = getaddrinfo(serv_addr[ic], serv_port_up[ic], &hints, &result);
 		if (i != 0) {
 			MSG("ERROR: [up] getaddrinfo on address %s (PORT %s) returned %s\n", serv_addr[ic], serv_port_up[ic], gai_strerror(i));
-			exit(EXIT_FAILURE);
+			/* This is no longer a fatal error. */
+			//exit(EXIT_FAILURE);
+			continue;
 		}
 
 		/* try to open socket for upstream traffic */
@@ -1114,22 +1132,28 @@ int main(void)
 				MSG("INFO: [up] result %i host:%s service:%s\n", i, host_name, port_name);
 				++i;
 			}
-			exit(EXIT_FAILURE);
+			/* This is no longer a fatal error. */
+			//exit(EXIT_FAILURE);
+			continue;
 		}
 
 		/* connect so we can send/receive packet with the server only */
 		i = connect(sock_up[ic], q->ai_addr, q->ai_addrlen);
 		if (i != 0) {
-			MSG("ERROR: [up] connect returned %s\n", strerror(errno));
-			exit(EXIT_FAILURE);
+			MSG("ERROR: [up] connect on address %s (port %s) returned: %s\n", serv_addr[ic], serv_port_down[ic], strerror(errno));
+			/* This is no longer a fatal error. */
+			//exit(EXIT_FAILURE);
+			continue;
 		}
 		freeaddrinfo(result);
 
 		/* look for server address w/ downstream port */
 		i = getaddrinfo(serv_addr[ic], serv_port_down[ic], &hints, &result);
 		if (i != 0) {
-			MSG("ERROR: [down] getaddrinfo on address %s (port %s) returned %s\n", serv_addr[ic], serv_port_up[ic], gai_strerror(i));
-			exit(EXIT_FAILURE);
+			MSG("ERROR: [down] getaddrinfo on address %s (port %s) returned: %s\n", serv_addr[ic], serv_port_down[ic], gai_strerror(i));
+			/* This is no longer a fatal error. */
+			//exit(EXIT_FAILURE);
+			continue;
 		}
 
 		/* try to open socket for downstream traffic */
@@ -1139,24 +1163,39 @@ int main(void)
 			else break; /* success, get out of loop */
 		}
 		if (q == NULL) {
-			MSG("ERROR: [down] failed to open socket to any of server %s addresses (port %s)\n", serv_addr[ic], serv_port_up[ic]);
+			MSG("ERROR: [down] failed to open socket to any of server %s addresses (port %s)\n", serv_addr[ic], serv_port_down[ic]);
 			i = 1;
 			for (q=result; q!=NULL; q=q->ai_next) {
 				getnameinfo(q->ai_addr, q->ai_addrlen, host_name, sizeof host_name, port_name, sizeof port_name, NI_NUMERICHOST);
 				MSG("INFO: [down] result %i host:%s service:%s\n", i, host_name, port_name);
 				++i;
 			}
-			exit(EXIT_FAILURE);
+			/* This is no longer a fatal error. */
+			//exit(EXIT_FAILURE);
+			continue;
 		}
 
 		/* connect so we can send/receive packet with the server only */
 		i = connect(sock_down[ic], q->ai_addr, q->ai_addrlen);
 		if (i != 0) {
-			MSG("ERROR: [down] connect returned %s\n", strerror(errno));
-			exit(EXIT_FAILURE);
+			MSG("ERROR: [down] connect address %s (port %s) returned: %s\n", serv_addr[ic], serv_port_down[ic], strerror(errno));
+			/* This is no longer a fatal error. */
+			//exit(EXIT_FAILURE);
+			continue;
 		}
 		freeaddrinfo(result);
+
+		/* If we made it through to here, this server is live */
+		serv_live[ic] = true;
+		MSG("INFO: Successfully contacted server %s\n", serv_addr[ic]);
 	}
+
+	//TODO: Check if there are any live servers available, if not we should exit since there cannot be any
+	// sensible course of action. Actually it would be best to redesign the whole communication loop, and take
+	// the socket constructors to be inside a try-retry loop. That way we can respond to severs that implemented
+	// there UDP handling erroneously (Like TTN at this moment?), or any other temporal obstuction in the communication
+	// path (broken stacks in routers for example) Now, contact may be lost for ever and a manual
+	// restart at the this side is required.
 
 	/* starting the concentrator */
 	if (radiostream_enabled == true) {
@@ -1182,10 +1221,10 @@ int main(void)
 		}
 	}
 	if (downstream_enabled == true) {
-		for (ic = 0; ic < serv_count; ic++) {
+		for (ic = 0; ic < serv_count; ic++) if (serv_live[ic] == true) {
 			//TODO: BUG: All down threads utilize the same ID: thrid_down. Although this is not a problem while running
 			//      it is when these are canceld. Therefore we must make an array here also.
-			i = pthread_create( &thrid_down, NULL, (void * (*)(void *))thread_down, (void *) (long) ic);
+			i = pthread_create( &thrid_down[ic], NULL, (void * (*)(void *))thread_down, (void *) (long) ic);
 			if (i != 0) {
 				MSG("ERROR: [main] impossible to create downstream thread\n");
 				exit(EXIT_FAILURE);
@@ -1339,9 +1378,9 @@ int main(void)
 				printf("# Invalid gps time reference (age: %li sec)\n", (long)difftime(time(NULL), time_reference_gps.systime));
 			}
 			if (gps_fake_enable == true) {
-				printf("# GPS *FAKE* coordinates: latitude %.5f, longitude %.5f, altitude %i m\n", cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt);
+				printf("# Manual GPS coordinates: latitude %.5f, longitude %.5f, altitude %i m\n", cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt);
 			} else if (coord_ok == true) {
-				printf("# GPS coordinates: latitude %.5f, longitude %.5f, altitude %i m\n", cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt);
+				printf("# System GPS coordinates: latitude %.5f, longitude %.5f, altitude %i m\n", cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt);
 			} else {
 				printf("# no valid GPS coordinates available yet\n");
 			}
@@ -1365,8 +1404,11 @@ int main(void)
 	
 	/* wait for upstream thread to finish (1 fetch cycle max) */
 	if (upstream_enabled == true) pthread_join(thrid_up, NULL);
-	//TODO: Is a join not better here, also thrid_down must become an array (this is a bug, see remark at creation!)
-	if (downstream_enabled == true) pthread_cancel(thrid_down); /* don't wait for downstream thread */
+	if (downstream_enabled == true) {
+		for (ic = 0; ic < serv_count; ic++)
+			if (serv_live[ic] == true)
+				pthread_join(thrid_down[ic], NULL);
+	}
 	if (ghoststream_enabled == true) ghost_stop();
 	if (monitor_enabled == true) monitor_stop();
 	if (gps_active == true) pthread_cancel(thrid_gps);   /* don't wait for GPS thread */
@@ -1375,7 +1417,7 @@ int main(void)
 	/* if an exit signal was received, try to quit properly */
 	if (exit_sig) {
 		/* shut down network sockets */
-		for (ic = 0; ic < serv_count; ic++) {
+		for (ic = 0; ic < serv_count; ic++) if (serv_live[ic] == true) {
 			shutdown(sock_up[ic], SHUT_RDWR);
 			shutdown(sock_down[ic], SHUT_RDWR);
 		}
@@ -1436,11 +1478,13 @@ void thread_up(void) {
 	/* report management variable */
 	bool send_report = false;
 	
+	MSG("INFO: [up] Thread activated for all servers.\n");
+
 	/* set upstream socket RX timeout */
-	for (ic = 0; ic < serv_count; ic++) {
+	for (ic = 0; ic < serv_count; ic++) if (serv_live[ic] == true) {
 		i = setsockopt(sock_up[ic], SOL_SOCKET, SO_RCVTIMEO, (void *)&push_timeout_half, sizeof push_timeout_half);
 		if (i != 0) {
-			MSG("ERROR: [up] setsockopt for server %i returned %s\n", ic, strerror(errno));
+			MSG("ERROR: [up] setsockopt for server %s returned %s\n", serv_addr[ic], strerror(errno));
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -1458,6 +1502,8 @@ void thread_up(void) {
 		if (radiostream_enabled == true) nb_pkt = lgw_receive(NB_PKT_MAX, rxpkt); else nb_pkt = 0;
 		if (ghoststream_enabled == true) nb_pkt = ghost_get(NB_PKT_MAX-nb_pkt, &rxpkt[nb_pkt]) + nb_pkt;
 
+
+        //TODO this test should in fact be before the ghost packets are collected.
 		pthread_mutex_unlock(&mx_concent);
 		if (nb_pkt == LGW_HAL_ERROR) {
 			MSG("ERROR: [up] failed packet fetch, exiting\n");
@@ -1797,7 +1843,8 @@ void thread_up(void) {
 		
 		/* send datagram to servers sequentially */
 		// TODO make this parallel.
-		for (ic = 0; ic < serv_count; ic++) {
+		for (ic = 0; ic < serv_count; ic++) if (serv_live[ic] == true) {
+
 			send(sock_up[ic], (void *)buff_up, buff_index, 0);
 			clock_gettime(CLOCK_MONOTONIC, &send_time);
 			pthread_mutex_lock(&mx_meas_up);
@@ -1821,7 +1868,8 @@ void thread_up(void) {
 					//MSG("WARNING: [up] ignored out-of sync ACK packet\n");
 					continue;
 				} else {
-					MSG("INFO: [up] PUSH_ACK received in %i ms\n", (int)(1000 * difftimespec(recv_time, send_time)));
+					//TODO: This may generate a lot of logdata, see other todo for a solution.
+					MSG("INFO: [up] PUSH_ACK for server %s received in %i ms\n", serv_addr[ic], (int)(1000 * difftimespec(recv_time, send_time)));
 					meas_up_ack_rcv += 1;
 					break;
 				}
@@ -1880,10 +1928,13 @@ void thread_down(void* pic) {
 	/* auto-quit variable */
 	uint32_t autoquit_cnt = 0; /* count the number of PULL_DATA sent since the latest PULL_ACK */
 	
+	MSG("INFO: [down] Thread activated for all server %s\n",serv_addr[ic]);
+
 	/* set downstream socket RX timeout */
 	i = setsockopt(sock_down[ic], SOL_SOCKET, SO_RCVTIMEO, (void *)&pull_timeout, sizeof pull_timeout);
 	if (i != 0) {
-		MSG("ERROR: [down] setsockopt for server %i returned %s\n", ic, strerror(errno));
+		//TODO Should this failure bring the application down?
+		MSG("ERROR: [down] setsockopt for server %s returned %s\n", serv_addr[ic], strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 	
@@ -1952,7 +2003,7 @@ void thread_down(void* pic) {
 		/* auto-quit if the threshold is crossed */
 		if ((autoquit_threshold > 0) && (autoquit_cnt >= autoquit_threshold)) {
 			exit_sig = true;
-			MSG("INFO: [down] the last %u PULL_DATA were not ACKed, exiting application\n", autoquit_threshold);
+			MSG("INFO: [down] for server %s the last %u PULL_DATA were not ACKed, exiting application\n", serv_addr[ic], autoquit_threshold);
 			break;
 		}
 		
@@ -2063,24 +2114,26 @@ void thread_down(void* pic) {
 			if (buff_down[3] == PKT_PULL_ACK) {
 				if ((buff_down[1] == token_h) && (buff_down[2] == token_l)) {
 					if (req_ack) {
-						MSG("INFO: [down] duplicate ACK received :)\n");
+						MSG("INFO: [down] for server %s duplicate ACK received :)\n",serv_addr[ic]);
 					} else { /* if that packet was not already acknowledged */
 						req_ack = true;
 						autoquit_cnt = 0;
 						pthread_mutex_lock(&mx_meas_dw);
 						meas_dw_ack_rcv += 1;
 						pthread_mutex_unlock(&mx_meas_dw);
-						MSG("INFO: [down] PULL_ACK received in %i ms\n", (int)(1000 * difftimespec(recv_time, send_time)));
+						MSG("INFO: [down] for server %s PULL_ACK received in %i ms\n", serv_addr[ic], (int)(1000 * difftimespec(recv_time, send_time)));
 					}
 				} else { /* out-of-sync token */
-					MSG("INFO: [down] received out-of-sync ACK\n");
+					MSG("INFO: [down] for server %s, received out-of-sync ACK\n",serv_addr[ic]);
 				}
 				continue;
 			}
 			
+
+			//TODO: This might generate to much logging data. The reporting should be reevaluated and an option -q should be added.
 			/* the datagram is a PULL_RESP */
 			buff_down[msg_len] = 0; /* add string terminator, just to be safe */
-			MSG("INFO: [down] PULL_RESP received :)\n"); /* very verbose */
+			MSG("INFO: [down] for server %s serv_addr[ic]PULL_RESP received :)\n",serv_addr[ic]); /* very verbose */
 			// printf("\nJSON down: %s\n", (char *)(buff_down + 4)); /* DEBUG: display JSON payload */
 			
 			/* initialize TX struct and try to parse JSON */
@@ -2399,6 +2452,8 @@ void thread_gps(void) {
 	
 	/* initialize some variables before loop */
 	memset(serial_buff, 0, sizeof serial_buff);
+
+	MSG("INFO: GPS thread activated.\n");
 	
 	while (!exit_sig && !quit_sig) {
 		/* blocking canonical read on serial port */
@@ -2481,6 +2536,8 @@ void thread_valid(void) {
 	unsigned init_cpt = 0;
 	double init_acc = 0.0;
 	double x;
+
+	MSG("INFO: Validation thread activated.\n");
 	
 	/* correction debug */
 	// FILE * log_file = NULL;
