@@ -612,7 +612,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Found %i servers in array.\n", serv_count);
 		ic = 0;
 		for (i = 0; i < serv_count  && ic < MAX_SERVERS; i++) {
-			nw_server = json_array_get_object(servers,ic);
+			nw_server = json_array_get_object(servers,i);
 			str = json_object_get_string(nw_server, "server_address");
 			val = json_object_get_value(nw_server, "serv_enabled");
 			val1 = json_object_get_value(nw_server, "serv_port_up");
