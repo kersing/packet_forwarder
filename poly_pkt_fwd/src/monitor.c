@@ -97,6 +97,13 @@ static pid_t web_pid  = 0;
 static pid_t ssh_pid  = 0;
 static pid_t ngrok_pid  = 0;
 
+
+void catch_tunnel(int sig_num)
+{ /* when we get here, we know there's a zombie child waiting */
+  int child_status;
+  wait(&child_status);
+  MSG("INFO: Tunnel removed.\n"); }
+
 /* monitor thread */
 static pthread_t thrid_monitor;
 
@@ -136,11 +143,11 @@ static pid_t system_ssh_tunnel_start(const char * address, const uint16_t remote
 	  MSG("WARNING: Tunnel could not be setup.\n");
 	  return 0;
     case 0:
-      execl(ssh,"-nNT","-R",bridge,address,NULL);
+      execl(ssh,"-n","-N","-R",bridge,address,NULL);
       MSG("WARNING: Tunnel died.\n");
       return 0;
     default:
-      MSG("INFO: Tunnel started.\n");
+      MSG("INFO: Tunnel ssh[%i] started.\n",(int) pid);
       return pid; } }
 
 static pid_t system_ngrok_tunnel_start(const char * authToken, const uint16_t localPort)
@@ -151,21 +158,25 @@ static pid_t system_ngrok_tunnel_start(const char * authToken, const uint16_t lo
 	  MSG("WARNING: Tunnel could not be setup.\n");
 	  return 0;
     case 0:
-      execl(ngrok,"tcp"," --authtoken",authToken,localPort,NULL);
+      //execl(ngrok,"tcp"," --authtoken",authToken,localPort,NULL);
+      execl(ngrok,"tcp",localPort,NULL);
       MSG("WARNING: Tunnel died.\n");
       return 0;
     default:
-      MSG("INFO: Tunnel started.\n");
+      MSG("INFO: Tunnel ngrok[%i] started.\n", (int) pid);
       return pid; } }
 
-static void system_tunnel_stop(pid_t pid)
+static int system_tunnel_stop(pid_t pid)
 { if (pid > 0)
   { if ((kill(pid,SIGQUIT)==0) || (kill(pid,SIGKILL)==0))
-    { MSG("INFO: Tunnel terminated.\n"); }
+    { MSG("INFO: Tunnel [%i] terminated.\n",(int) pid);
+      return true; }
     else
-    { MSG("WARNING: Tunnel could not be terminated.\n"); } }
+    { MSG("WARNING: Tunnel [%i] could not be terminated.\n",(int) pid);
+      return false; } }
   else
-  { MSG("WARNING: No tunnel to terminate.\n"); }
+  { MSG("WARNING: No tunnel to terminate.\n");
+    return true; }
 }
 
 
@@ -178,7 +189,7 @@ static void open_ssh(const char * address, const uint16_t remotePort)
   { ssh_pid = system_ssh_tunnel_start(address,remotePort,ssh); } }
 
 static void close_ssh()
-{ system_tunnel_stop(ssh_pid); }
+{ if (system_tunnel_stop(ssh_pid) == true) ssh_pid = 0; }
 
 static void open_ngrok(const char * authToken)
 { MSG("INFO: Opening ngrok tunnel for SSH.\n");
@@ -189,7 +200,7 @@ static void open_ngrok(const char * authToken)
   { ngrok_pid = system_ngrok_tunnel_start(authToken,ssh); } }
 
 static void close_ngrok()
-{ system_tunnel_stop(ngrok_pid); }
+{ if (system_tunnel_stop(ngrok_pid) == true) ngrok_pid = 0; }
 
 static void open_web(const char * address, const uint16_t remotePort)
 { MSG("INFO: Opening tunnel for WEB on server %s at port %u\n",address,remotePort);
@@ -200,7 +211,7 @@ static void open_web(const char * address, const uint16_t remotePort)
   { web_pid = system_ssh_tunnel_start(address,remotePort,web); } }
 
 static void close_web()
-{ system_tunnel_stop(web_pid > 0); }
+{ if (system_tunnel_stop(web_pid) == true) web_pid = 0; }
 
 
 static void printCmdList(const char * instructions[], unsigned int instCnt, char * response, size_t respSize)
@@ -241,6 +252,9 @@ void monitor_start(const char * monitor_addr, const char * monitor_port)
 {
     /* You cannot start a running monitor listener.*/
     if (monitor_run) return;
+
+    /* Install a signal for proper process termination. */
+    signal(SIGCHLD, catch_tunnel);
 
     int i; /* loop variable and temporary variable for return value */
 
@@ -359,7 +373,7 @@ static void thread_monitor(void)
             { continue; }
 
             /* if the datagram does not respect protocol, just ignore it */
-            if ( (msg_len >= MNTR_RQST_MSGSIZE) || (buff_down[0] != PROTOCOL_VERSION) || (buff_down[3] != MNTR_DATA) )
+            if ( (msg_len < 7) || (msg_len >= MNTR_RQST_MSGSIZE) || (buff_down[0] != PROTOCOL_VERSION) || (buff_down[3] != MNTR_DATA) )
             { MSG("WARNING: [monitor] ignoring invalid request\n");
               continue; }
 
@@ -371,7 +385,8 @@ static void thread_monitor(void)
             char * arguments  = (char *) buff_down+7;
 
             if (command > 0)
-            { handleCommand(command,action,arguments,&response[4],sizeof(response)-4);
+            { response[4] = 0;
+              handleCommand(command,action,arguments,&response[4],sizeof(response)-4);
               size_t len = strlen(&response[4]);
               response[1] = (char) 0; //(len >> 8) & 0xFF; // to be implemented
               response[2] = (char) 0; //len & 0xFF; // to be implemented
