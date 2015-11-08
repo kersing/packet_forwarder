@@ -574,6 +574,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 	JSON_Value *val1 = NULL; /* needed to detect the absence of some fields */
 	JSON_Value *val2 = NULL; /* needed to detect the absence of some fields */
 	JSON_Array *servers = NULL;
+	JSON_Array *syscalls = NULL;
 	const char *str; /* pointer to sub-strings in the JSON data */
 	unsigned long long ull = 0;
 	int i; /* Loop variable */
@@ -642,29 +643,20 @@ static int parse_gateway_configuration(const char * conf_file) {
 			ic++;
 		}
 		serv_count = ic;
-	}
-
-	/* If there are no servers in server array fall back to old fashioned single server definition. */
-	if (serv_count == 0)
-	{	/* server hostname or IP address (optional) */
+	} else {
+		/* If there are no servers in server array fall back to old fashioned single server definition.
+		 * The difference with the original situation is that we require a complete definition. */
+		/* server hostname or IP address (optional) */
 		str = json_object_get_string(conf_obj, "server_address");
-		if (str != NULL) {
+		val1 = json_object_get_value(conf_obj, "serv_port_up");
+		val2 = json_object_get_value(conf_obj, "serv_port_down");
+		if ((str != NULL) && (val1 != NULL) && (val2 != NULL)) {
 			serv_count = 1;
 			serv_live[0] = false;
 			strncpy(serv_addr[0], str, sizeof serv_addr[0]);
-			MSG("INFO: server hostname or IP address is configured to \"%s\"\n", serv_addr[0]);
-		}
-
-		/* get up and down ports (optional) */
-		val = json_object_get_value(conf_obj, "serv_port_up");
-		if (val != NULL) {
-			snprintf(serv_port_up[0], sizeof serv_port_up[0], "%u", (uint16_t)json_value_get_number(val));
-			MSG("INFO: upstream port is configured to \"%s\"\n", serv_port_up[0]);
-		}
-		val = json_object_get_value(conf_obj, "serv_port_down");
-		if (val != NULL) {
-			snprintf(serv_port_down[0], sizeof serv_port_down[0], "%u", (uint16_t)json_value_get_number(val));
-			MSG("INFO: downstream port is configured to \"%s\"\n", serv_port_down[0]);
+			snprintf(serv_port_up[0], sizeof serv_port_up[0], "%u", (uint16_t)json_value_get_number(val1));
+			snprintf(serv_port_down[0], sizeof serv_port_down[0], "%u", (uint16_t)json_value_get_number(val2));
+			MSG("INFO: Server configured to \"%s\", with port up \"%s\" and port down \"%s\"\n", serv_addr[0],serv_port_up[0],serv_port_down[0]);
 		}
 	}
 
@@ -680,7 +672,19 @@ static int parse_gateway_configuration(const char * conf_file) {
 		serv_count = 1;
 	}
 
-	
+	/* Read the system calls for the monitor function. */
+	syscalls = json_object_get_array(conf_obj, "system_calls");
+	if (syscalls != NULL) {
+		/* serv_count represents the maximal number of servers to be read. */
+		mntr_sys_count = json_array_get_count(syscalls);
+		MSG("INFO: Found %i system calls in array.\n", mntr_sys_count);
+		for (i = 0; i < mntr_sys_count  && i < MNTR_SYS_MAX; i++) {
+			str = json_array_get_string(syscalls,i);
+			strncpy(mntr_sys_list[i], str, sizeof mntr_sys_list[i]);
+			MSG("INFO: System command %i: \"%s\"\n",i,mntr_sys_list[i]);
+		}
+	}
+
 	/* monitor hostname or IP address (optional) */
 	str = json_object_get_string(conf_obj, "monitor_address");
 	if (str != NULL) {
@@ -754,6 +758,34 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: GPS serial port path is configured to \"%s\"\n", gps_tty_path);
 	}
 	
+	/* SSH path (optional) */
+	str = json_object_get_string(conf_obj, "ssh_path");
+	if (str != NULL) {
+		strncpy(ssh_path, str, sizeof ssh_path);
+		MSG("INFO: SSH path is configured to \"%s\"\n", ssh_path);
+	}
+
+	/* SSH port (optional) */
+	val = json_object_get_value(conf_obj, "ssh_port");
+	if (val != NULL) {
+		ssh_port = (uint16_t) json_value_get_number(val);
+		MSG("INFO: SSH port is configured to %u\n", ssh_port);
+	}
+
+	/* WEB port (optional) */
+	val = json_object_get_value(conf_obj, "http_port");
+	if (val != NULL) {
+		http_port = (uint16_t) json_value_get_number(val);
+		MSG("INFO: HTTP port is configured to %u\n", http_port);
+	}
+
+	/* NGROK path (optional) */
+	str = json_object_get_string(conf_obj, "ngrok_path");
+	if (str != NULL) {
+		strncpy(ngrok_path, str, sizeof ngrok_path);
+		MSG("INFO: NGROK path is configured to \"%s\"\n", ngrok_path);
+	}
+
 	/* get reference coordinates */
 	val = json_object_get_value(conf_obj, "ref_latitude");
 	if (val != NULL) {
@@ -1193,7 +1225,7 @@ int main(void)
 	//TODO: Check if there are any live servers available, if not we should exit since there cannot be any
 	// sensible course of action. Actually it would be best to redesign the whole communication loop, and take
 	// the socket constructors to be inside a try-retry loop. That way we can respond to severs that implemented
-	// there UDP handling erroneously (Like TTN at this moment?), or any other temporal obstuction in the communication
+	// there UDP handling erroneously (Like TTN at this moment?), or any other temporal obstruction in the communication
 	// path (broken stacks in routers for example) Now, contact may be lost for ever and a manual
 	// restart at the this side is required.
 

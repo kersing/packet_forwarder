@@ -37,6 +37,15 @@
 #include "monitor.h"
 
 
+/* -------------------------------------------------------------------------- */
+/* --- SHARED FIELDS -------------------------------------------------------- */
+uint16_t ssh_port         = 22;
+uint16_t http_port        = 80;
+char ssh_path[64]         = "/usr/bin/ssh";
+char ngrok_path[64]       = "/usr/bin/ngrok";
+int mntr_sys_count        = 0;
+char mntr_sys_list[MNTR_SYS_MAX][64];
+
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
@@ -97,13 +106,6 @@ static pid_t web_pid  = 0;
 static pid_t ssh_pid  = 0;
 static pid_t ngrok_pid  = 0;
 
-
-void catch_tunnel(int sig_num)
-{ /* when we get here, we know there's a zombie child waiting */
-  int child_status;
-  wait(&child_status);
-  MSG("INFO: Tunnel removed.\n"); }
-
 /* monitor thread */
 static pthread_t thrid_monitor;
 
@@ -129,46 +131,43 @@ static void system_call(const char * command, char * response, size_t respSize)
 
 
 // Note: you must have key installed in the local machine.
-// TODO: Suppress password request
-// TODO: Option -N does not seem to work within execl. decouple stind on that process.
 static pid_t system_ssh_tunnel_start(const char * address, const uint16_t remotePort, const uint16_t localPort)
 { char ssh[64] = "/usr/bin/ssh";  // dit moet in de config worden opgegeven
   char bridge[256];
-  //snprintf(args,sizeof(args),"-N -R %u:localhost:%u %s",remotePort,localPort,address);
   snprintf(bridge,sizeof(bridge),"%u:localhost:%u",remotePort,localPort);
-    MSG("INFO: SSH bridge = %s\n",bridge);
   pid_t pid = fork();
   switch(pid)
   { case -1:
 	  MSG("WARNING: Tunnel could not be setup.\n");
 	  return 0;
     case 0:
-      execl(ssh,"-n","-N","-R",bridge,address,NULL);
+      execl(ssh,"ssh","-n","-N","-R",bridge,address,NULL);
       MSG("WARNING: Tunnel died.\n");
-      return 0;
+      exit(0);
     default:
       MSG("INFO: Tunnel ssh[%i] started.\n",(int) pid);
       return pid; } }
 
-static pid_t system_ngrok_tunnel_start(const char * authToken, const uint16_t localPort)
+static pid_t system_ngrok_tunnel_start(const uint16_t localPort)
 { char ngrok[64] = "/usr/bin/ngrok";  // dit moet in de config worden opgegeven
+  char port[16];
+  snprintf(port,sizeof(port),"%u",localPort);
   pid_t pid = fork();
   switch(pid)
   { case -1:
 	  MSG("WARNING: Tunnel could not be setup.\n");
 	  return 0;
     case 0:
-      //execl(ngrok,"tcp"," --authtoken",authToken,localPort,NULL);
-      execl(ngrok,"tcp",localPort,NULL);
+      execl(ngrok,"ngrok","tcp",port,NULL);
       MSG("WARNING: Tunnel died.\n");
-      return 0;
+      exit(0);
     default:
       MSG("INFO: Tunnel ngrok[%i] started.\n", (int) pid);
       return pid; } }
 
 static int system_tunnel_stop(pid_t pid)
 { if (pid > 0)
-  { if ((kill(pid,SIGQUIT)==0) || (kill(pid,SIGKILL)==0))
+  { if (kill(pid,SIGTERM)==0)
     { MSG("INFO: Tunnel [%i] terminated.\n",(int) pid);
       return true; }
     else
@@ -176,45 +175,41 @@ static int system_tunnel_stop(pid_t pid)
       return false; } }
   else
   { MSG("WARNING: No tunnel to terminate.\n");
-    return true; }
-}
+    return true; } }
 
 
 static void open_ssh(const char * address, const uint16_t remotePort)
 { MSG("INFO: Opening SSH tunnel for SSH on server %s at port %u\n",address,remotePort);
-  int ssh = 22; // dit moet in de config worden opgegeven, and note: only root may forward this port
   if (ssh_pid > 0 || ngrok_pid > 0)
   { MSG("WARNING: Only one SSH tunnel can be active at a time.\n"); }
   else
-  { ssh_pid = system_ssh_tunnel_start(address,remotePort,ssh); } }
+  { ssh_pid = system_ssh_tunnel_start(address,remotePort,ssh_port); } }
 
 static void close_ssh()
 { if (system_tunnel_stop(ssh_pid) == true) ssh_pid = 0; }
 
-static void open_ngrok(const char * authToken)
+static void open_ngrok()
 { MSG("INFO: Opening ngrok tunnel for SSH.\n");
-  int ssh = 22; // dit moet in de config worden opgegeven, and note: only root may forward this port
   if (ssh_pid > 0 || ngrok_pid > 0)
   { MSG("WARNING: Only one SSH tunnel can be active at a time.\n"); }
   else
-  { ngrok_pid = system_ngrok_tunnel_start(authToken,ssh); } }
+  { ngrok_pid = system_ngrok_tunnel_start(ssh_port); } }
 
 static void close_ngrok()
 { if (system_tunnel_stop(ngrok_pid) == true) ngrok_pid = 0; }
 
 static void open_web(const char * address, const uint16_t remotePort)
 { MSG("INFO: Opening tunnel for WEB on server %s at port %u\n",address,remotePort);
-  int web = 80; // dit moet in de config worden opgegeven , and note: only root may forward this port
   if (web_pid > 0)
-  { MSG("WARNING: Only one SSH tunnel can be active at a time on local port %i.\n",web); }
+  { MSG("WARNING: Only one SSH tunnel can be active at a time on local port %u.\n",http_port); }
   else
-  { web_pid = system_ssh_tunnel_start(address,remotePort,web); } }
+  { web_pid = system_ssh_tunnel_start(address,remotePort,http_port); } }
 
 static void close_web()
 { if (system_tunnel_stop(web_pid) == true) web_pid = 0; }
 
 
-static void printCmdList(const char * instructions[], unsigned int instCnt, char * response, size_t respSize)
+static void printCmdList(char instructions[MNTR_SYS_MAX][64], unsigned int instCnt, char * response, size_t respSize)
 { unsigned int i;
   size_t respcnt = 0;
   for (i=0; i<instCnt; i++)
@@ -224,18 +219,17 @@ static void printCmdList(const char * instructions[], unsigned int instCnt, char
 
 
 static void handleCommand(const uint8_t cmd, const uint16_t action, const char * arguments, char  * response, size_t respSize)
-{ const char * instructions[] = { "df -m", "ps aux" }; // dit moet in de config worden opgegeven
-  unsigned int size = sizeof(instructions) / sizeof(*instructions);
-  MSG("Size of instruction = %u\n",size);
+{ //unsigned int size = sizeof(instructions) / sizeof(*instructions);
+  //MSG("DEBUG: Size of instruction = %u\n",size);
   switch(cmd)
   { case 0x02:
-	  if      (action == 0)   { printCmdList(instructions,size,response,respSize); }
-	  else if (action<=size)  { system_call(instructions[action-1],response,respSize); }
-	  else                    { snprintf(response,respSize,"Could not execute command with invalid action.\n"); }
+	  if      (action == 0)            { printCmdList(mntr_sys_list,mntr_sys_count,response,respSize); }
+	  else if (action<=mntr_sys_count) { system_call(mntr_sys_list[action-1],response,respSize); }
+	  else                             { snprintf(response,respSize,"Could not execute command with invalid action.\n"); }
 	  break;
     case 0x03: open_ssh(arguments,action); break;
     case 0x04: close_ssh(); break;
-    case 0x05: open_ngrok(arguments); break;
+    case 0x05: open_ngrok(); break;
     case 0x06: close_ngrok(); break;
     case 0x07: open_web(arguments,action); break;
     case 0x08: close_web(); break;
@@ -253,8 +247,8 @@ void monitor_start(const char * monitor_addr, const char * monitor_port)
     /* You cannot start a running monitor listener.*/
     if (monitor_run) return;
 
-    /* Install a signal for proper process termination. */
-    signal(SIGCHLD, catch_tunnel);
+    /* We do want to hear our children die. */
+    signal(SIGCHLD, SIG_IGN);
 
     int i; /* loop variable and temporary variable for return value */
 
@@ -390,7 +384,6 @@ static void thread_monitor(void)
               size_t len = strlen(&response[4]);
               response[1] = (char) 0; //(len >> 8) & 0xFF; // to be implemented
               response[2] = (char) 0; //len & 0xFF; // to be implemented
-              MSG("DEBUG: response len = %i",(int) len);
               if (len > 0) send(sock_monitor, (void *)response, len+4, 0); }
 
            } }

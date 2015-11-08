@@ -240,6 +240,11 @@
         /* Monitor configuration */
         "monitor_address": "127.0.0.1",
         "monitor_port": 2008,
+        "ssh_path": "/usr/bin/ssh",
+        "ssh_port": 22,
+        "http_port": 80,
+        "ngrok_path": "/usr/bin/ngrok",
+        "system_calls": {"df -m","free -h","uptime","who -a","uname -a"},
         /* Platform definition, put a asterix here for the system value, max 24 chars. */
         "platform": "*", 
         /* Email of gateway operator, max 40 chars*/
