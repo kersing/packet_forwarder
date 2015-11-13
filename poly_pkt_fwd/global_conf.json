@@ -244,7 +244,7 @@
         "ssh_port": 22,
         "http_port": 80,
         "ngrok_path": "/usr/bin/ngrok",
-        "system_calls": {"df -m","free -h","uptime","who -a","uname -a"},
+        "system_calls": ["df -m","free -h","uptime","who -a","uname -a"],
         /* Platform definition, put a asterix here for the system value, max 24 chars. */
         "platform": "*", 
         /* Email of gateway operator, max 40 chars*/
