@@ -5,7 +5,7 @@
  *  Description: Monitor of the gateway.
  *
  *  License: Revised BSD License, see LICENSE.TXT file include in the project
- *  Maintainer: Ruud Vlaming
+ *  Author & Maintainer (for this file): Ruud Vlaming
  */
 
 #ifndef _ACCESS_H_

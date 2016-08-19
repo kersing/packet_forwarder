@@ -34,16 +34,20 @@
 #include <netdb.h>      /* gai_strerror */
 
 #include <pthread.h>
+#include "trace.h"
 #include "ghost.h"
+#include "endian.h"
 
 
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
 
-#define MSG(args...)    printf(args) /* message that is destined to the user */
-#define PROTOCOL_VERSION    1
+//#define MSG(args...)    printf(args) /* message that is destined to the user */ => moved to trace.h
+#define PROTOCOL_VERSION    2
 #define GHOST_DATA         11
+
+extern bool logger_enabled;
 
 volatile bool ghost_run = false;      /* false -> ghost thread terminates cleanly */
 
@@ -61,9 +65,13 @@ static uint8_t ghst_end;                 /* end of circular packet buffer  */
 static uint8_t ghst_bgn;                 /* begin of circular packet buffer */
 
 static int sock_ghost; /* socket for downstream traffic */
+static char gateway_id[16]  = ""; /* string form of gateway mac address */
 
 /* ghost thread */
 static pthread_t thrid_ghost;
+
+/* Reference coordinates, for broadcasting (beacon) */
+static struct coord_s reference_coord;
 
 /* for debugging purposes. */
 static void printBuffer(uint8_t *b, uint8_t len)  __attribute__ ((unused));
@@ -104,6 +112,7 @@ typedef union
   float f; } mix;
 
 /* Helper functions for architecture independent conversion (BE!) of data packet to structure lgw_pkt_rx_s */
+//TODO: This is hard conversion from BE to LE, but we could run on a BE chip or in a BE mode (Arm supports both!)
 static uint32_t u32(uint8_t *p, uint8_t i) { return (uint32_t)(p[i+3]) + ((uint32_t)(p[i+2])<<8) + ((uint32_t)(p[i+1])<<16) + ((uint32_t)(p[i])<<24);  }
 static uint16_t u16(uint8_t *p, uint8_t i) { return (uint16_t)p[i+1] + ((uint16_t)p[i]<<8);  }
 static uint8_t u8(uint8_t *p, uint8_t i)   { return p[i]; }
@@ -133,17 +142,20 @@ static void readRX(struct lgw_pkt_rx_s *p, uint8_t *b)
 
 static void thread_ghost(void);
 
-
 /* -------------------------------------------------------------------------- */
 /* --- THREAD: RECEIVING PACKETS FROM GHOST NODES --------------------------- */
 
 
-void ghost_start(const char * ghost_addr, const char * ghost_port)
+void ghost_start(const char * ghost_addr, const char * ghost_port, const struct coord_s refcoor, const char * gwid)
 {
     /* You cannot start a running ghost listener.*/
     if (ghost_run) return;
 
     int i; /* loop variable and temporary variable for return value */
+
+    /* copy the static coordinates (so if the gps changes, this is not reflected!) */
+    reference_coord = refcoor;
+    strncpy(gateway_id,gwid,sizeof gateway_id);
 
     struct addrinfo addresses;
     struct addrinfo *result; /* store result of getaddrinfo */
@@ -231,7 +243,7 @@ int ghost_get(int max_pkt, struct lgw_pkt_rx_s *pkt_data)
     pthread_mutex_unlock(&cb_ghost);
 
     if (get_pkt>0)
-    { MSG("INFO: copied %i packets from ghost, ghst_end  = %i \n",get_pkt,ghst_end);
+    { LOGGER("INFO: copied %i packets from ghost, ghst_end  = %i \n",get_pkt,ghst_end);
       // To get more info enable this
       //for (i=0; i<get_pkt; i++)
       //{ printf("packet %i\n",i);
@@ -259,25 +271,33 @@ static void thread_ghost(void)
 
     /* data buffers */
     uint8_t buff_down[GHST_MIN_PACKETSIZE+GHST_RX_BUFFSIZE]; /* buffer to receive downstream packets */
-    uint8_t buff_req[12]; /* buffer to compose pull requests */
+    uint8_t buff_req[GHST_REQ_BUFFSIZE]; /* buffer to compose pull requests */
     int msg_len;
-
-    /* protocol variables */
-    //TODO: repair the logic on this variable
-    //!bool req_ack = false; /* keep track of whether PULL_DATA was acknowledged or not */
 
     /* set downstream socket RX timeout */
     i = setsockopt(sock_ghost, SOL_SOCKET, SO_RCVTIMEO, (void *)&ghost_timeout, sizeof ghost_timeout);
     if (i != 0)
-    { MSG("ERROR: [down] setsockopt returned %s\n", strerror(errno));
+    { MSG("ERROR: [ghost] setsockopt returned %s\n", strerror(errno));
       exit(EXIT_FAILURE); }
 
-    /* pre-fill the pull request buffer with fixed fields */
+    /* pre-fill the pull request buffer with fixed fields, check if there is enough space. */
+    if (sizeof(buff_req) < 4 + sizeof gateway_id + 2*sizeof(double))
+    { MSG("INTERNAL ERROR: [ghost] BUFFER TO SMALL.\n");
+      exit(EXIT_FAILURE); }
+    memset(buff_req,0,sizeof buff_req);
+
+    /* Add identification part */
     buff_req[0] = PROTOCOL_VERSION;
+    buff_req[1] = 0;  // reserved for future use
+    buff_req[2] = 0;  // reserved for future use
     buff_req[3] = GHOST_DATA;
-    //TODO: repair random verification
-    *(uint32_t *)(buff_req + 4) = 0;
-    *(uint32_t *)(buff_req + 8) = 0;
+
+    /* Add the gateway id to the request */
+    memcpy(&buff_req[4],&gateway_id, sizeof gateway_id);
+
+    /* Add the coordinates to the buffer */
+    tobecpy(&buff_req[4+sizeof(gateway_id)],&reference_coord.lon,sizeof(double));
+    tobecpy(&buff_req[4+sizeof(gateway_id)+sizeof(double)],&reference_coord.lat,sizeof(double));
 
     /* aux variable for data copy */
     int  next;
@@ -286,6 +306,7 @@ static void thread_ghost(void)
     while (ghost_run)
     {   /* send PULL request and record time */
         // TODO zend later hier de data voor de nodes, nu alleen een pullreq.
+
         send(sock_ghost, (void *)buff_req, sizeof buff_req, 0);
         clock_gettime(CLOCK_MONOTONIC, &send_time);
         //!req_ack = false;
@@ -297,15 +318,14 @@ static void thread_ghost(void)
             msg_len = recv(sock_ghost, (void *)buff_down, (sizeof buff_down)-1, 0);
             clock_gettime(CLOCK_MONOTONIC, &recv_time);
 
-            /* if a network message was received, reset the wait time, otherwise continue */
-            if (msg_len >= 0)
-            {  send_time = recv_time; }
-            else
-            { continue; }
+            /* The protocol requires renewal of the subscription on regular basis. So we do
+             * not reset the wait time force a new pull request every NODE_CALL_SECS.
+             * If we are here because of a timeout, try again.*/
+            if (msg_len < 0) { continue; }
 
             /* if the datagram does not respect protocol, just ignore it */
             if ((msg_len < 4 + GHST_MIN_PACKETSIZE) || (msg_len > 4 + GHST_RX_BUFFSIZE) || (buff_down[0] != PROTOCOL_VERSION) || ((buff_down[3] != GHOST_DATA) ))
-            { MSG("WARNING: [down] ignoring invalid packet\n");
+            { LOGGER("WARNING: [ghost] ignoring invalid packet len=%d, protocol_version=%d, id=%d\n", msg_len, buff_down[0], buff_down[3]);
               continue; }
 
             /* the datagram is a GHOST_DATA */
@@ -317,15 +337,15 @@ static void thread_ghost(void)
             full  =  next == ghst_end;
             pthread_mutex_unlock(&cb_ghost);
 
-            /* make a copy ot the data received to the circular buffer, and shift the write index. */
+            /* make a copy to the data received to the circular buffer, and shift the write index. */
             if (full)
-            {  MSG("WARNING: ghost buffer is full, dropping packet)\n"); }
+            {  LOGGER("WARNING: [ghost] buffer is full, dropping packet)\n"); }
             else
             {  memcpy((void *)(buffRX+ghst_bgn*GHST_RX_BUFFSIZE),buff_down+4,msg_len-3);
                pthread_mutex_lock(&cb_ghost);
                ghst_bgn = next;
                pthread_mutex_unlock(&cb_ghost);
-               MSG("RECEIVED, ghst_bgn = %i \n", ghst_bgn); } } }
+               LOGGER("RECEIVED, [ghost] ghst_bgn = %i \n", ghst_bgn); } } }
 
     MSG("\nINFO: End of ghost thread\n");
 }

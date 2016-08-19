@@ -5,13 +5,14 @@
  *  Description: Virtualization of nodes.
  *
  *  License: Revised BSD License, see LICENSE.TXT file include in the project
- *  Maintainer: Ruud Vlaming
+ *  Author & Maintainer (for this file): Ruud Vlaming
  */
 
 #ifndef _GHOST_H_
 #define _GHOST_H_
 
 #include "loragw_hal.h"
+#include "loragw_gps.h"
 #include "poly_pkt_fwd.h"
 
 /* -------------------------------------------------------------------------- */
@@ -30,10 +31,11 @@
 
 /* The total number of buffer bytes equals: (GHST_RX_BUFFSIZE + GHST_TX_BUFFSIZE) * GHST_NM_RCV */
 #define GHST_MIN_PACKETSIZE   38     /* Minimal viable packet size. */
+#define GHST_REQ_BUFFSIZE     36     /* Size of buffer held pull requests  */
 #define GHST_RX_BUFFSIZE     320     /* Size of buffer held for receiving packets  */
-#define GHST_TX_BUFFSIZE     320     /* Size of buffer held for receiving packets  */
+#define GHST_TX_BUFFSIZE     320     /* Size of buffer held for sending packets  */
 #define GHST_NM_RCV           12     /* max number of packets to be stored in receive mode, do not exceed 255  */
-#define NODE_CALL_SECS        60     /* Minimum time between calls for ghost nodes, don't hammer de node server. */
+#define NODE_CALL_SECS       120     /* Minimum time between calls for ghost nodes, don't hammer the node server. */
 
 /* -------------------------------------------------------------------------- */
 /* --- PUBLIC FUNCTIONS PROTOTYPES ------------------------------------------ */
@@ -41,7 +43,7 @@
 
 
 /* Call this to start/stop the server that communicates with the ghost node server. */
-void ghost_start(const char * ghost_addr, const char * ghost_port);
+void ghost_start(const char * ghost_addr, const char * ghost_port, const struct coord_s refcoor, const char * gwid);
 void ghost_stop(void);
 
 

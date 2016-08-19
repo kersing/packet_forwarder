@@ -34,6 +34,7 @@
 #include <netdb.h>      /* gai_strerror */
 
 #include <pthread.h>
+#include "trace.h"
 #include "monitor.h"
 
 
@@ -50,7 +51,7 @@ char mntr_sys_list[MNTR_SYS_MAX][64];
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
 
-#define MSG(args...)    printf(args) /* message that is destined to the user */
+//#define MSG(args...)    printf(args) /* message that is destined to the user */ => moved to trace.h
 #define PROTOCOL_VERSION    1
 #define MNTR_DATA          17
 #define MNTR_RSPN          18

@@ -2,12 +2,24 @@
     "SX1301_conf": {
         "lorawan_public": true,
         "clksrc": 1, /* radio_1 provides clock to concentrator */
+        "lbt_cfg": {
+            "enable": false,
+            "rssi_target": 160, /* rssi in dBm = -lbt_rssi_target/2 */
+            "nb_channel": 1,
+            "start_freq": 869525000,
+            "scan_time_us": 5000,
+            "tx_delay_1ch_us": 4000000,
+            "tx_delay_2ch_us": 4000000
+        },
+        "antenna_gain": 0, /* antenna gain, in dBi */
         "radio_0": {
             "enable": true,
             "type": "SX1257",
             "freq": 867500000,
             "rssi_offset": -166.0,
-            "tx_enable": true
+            "tx_enable": true,
+            "tx_freq_min": 863000000,
+            "tx_freq_max": 870000000
         },
         "radio_1": {
             "enable": true,
@@ -197,20 +209,22 @@
     "gateway_conf": {
         /* change with default server address/ports, or overwrite in local_conf.json */
         "gateway_ID": "AA555A0000000000",
-        /* Devices */
+        /* Systems (set logger to true for logs per (!) packet) */
         "gps": true,
         "beacon": false,
         "monitor": false,
+        "logger": false,
+        /* Streams */
         "upstream": true,
         "downstream": true,
         "ghoststream": false,
         "radiostream": true,
         "statusstream": true,
-        /* node server */
+        /* node server, (for standard server, fall back for poly packet server) */
         "server_address": "127.0.0.1",
         "serv_port_up": 1680,
         "serv_port_down": 1681,
-        /* node servers for poly packet server (max 4) */
+        /* node servers for poly packet server (max 4 enabled, rest is ignored) */
         "servers":
         [ { "server_address": "127.0.0.1",
             "serv_port_up": 1680,
@@ -245,13 +259,15 @@
         "http_port": 80,
         "ngrok_path": "/usr/bin/ngrok",
         "system_calls": ["df -m","free -h","uptime","who -a","uname -a"],
-        /* Platform definition, put a asterix here for the system value, max 24 chars. */
-        "platform": "*", 
-        /* Email of gateway operator, max 40 chars*/
-        "contact_email": "operator@gateway.tst", 
-        /* Public description of this device, max 64 chars */
-        "description": "Update me" 
-        
-           
+        /* Performance updates (if empty, nothing is written) */
+        "stat_format": "semtech",                 /* semtech of lorank. */
+        "stat_damping": 50,                       /* 1: least damping up to 99: most damping, */
+        "stat_file": "stats.txt",                 /* Put or the whole path, or only a file name */
+        /* For human communication */
+        "platform": "*",                          /* Platform definition, put a asterix here for the system value, max 24 chars. */
+        "contact_email": "operator@gateway.tst",  /* Email of gateway operator, max 40 chars*/
+        "description": "Update me"                /* Public description of this device, max 64 chars */
+
+
     }
 }
