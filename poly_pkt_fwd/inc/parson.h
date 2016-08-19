@@ -30,6 +30,7 @@ extern "C"
 #endif
 
 #include <stddef.h>   /* size_t */
+#include <stdbool.h>  /* bool type */
 
 /* Define the formating of doubles for your project. */
 #define DOUBLE_SERIALIZATION_FORMAT "%.10g"

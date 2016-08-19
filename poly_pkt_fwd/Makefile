@@ -39,7 +39,7 @@ LGW_INC += $(LGW_PATH)/inc/loragw_gps.h
 ### Linking options
 
 ifeq ($(CFG_SPI),native)
-  LIBS := -lloragw -lrt -lpthread  -lm
+  LIBS := -lloragw -lrt -lpthread -lm
 else ifeq ($(CFG_SPI),ftdi)
   LIBS := -lloragw -lrt -lpthread -lmpsse -lm
 else ifeq ($(CFG_SPI),mac)
@@ -47,11 +47,11 @@ else ifeq ($(CFG_SPI),mac)
 else
   # keep compatibility with SX1301 HAL version 1.2.x and bellow
   ifeq ($(LGW_PHY),native)
-    LIBS := -lloragw -lrt -lpthread  -lm
+    LIBS := -lloragw -lrt -lpthread -lm
   else ifeq ($(LGW_PHY),ftdi)
     LIBS := -lloragw -lrt -lpthread -lmpsse -lm
   else ifeq ($(LGW_PHY),mac)
-    LIBS := -lloragw -lpthread -lmpsse  -lm
+    LIBS := -lloragw -lpthread -lmpsse -lm
   else
     $(error [error] Can't find configuration for SPI phy)
   endif
@@ -78,8 +78,8 @@ $(OBJDIR)/%.o: src/%.c $(INCLUDES) | $(OBJDIR)
 $(OBJDIR)/$(APP_NAME).o: src/$(APP_NAME).c $(LGW_INC) $(INCLUDES) | $(OBJDIR)
 	$(CC) -c $(CFLAGS) $(VFLAG) -I$(LGW_PATH)/inc $< -o $@
 
-$(APP_NAME): $(OBJDIR)/$(APP_NAME).o $(LGW_PATH)/libloragw.a $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o $(OBJDIR)/ghost.o $(OBJDIR)/endian.o $(OBJDIR)/monitor.o 
-	$(CC) -L$(LGW_PATH) $< $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o $(OBJDIR)/ghost.o $(OBJDIR)/endian.o $(OBJDIR)/monitor.o -o $@ $(LIBS)
+$(APP_NAME): $(OBJDIR)/$(APP_NAME).o $(LGW_PATH)/libloragw.a $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o $(OBJDIR)/ghost.o $(OBJDIR)/endianext.o $(OBJDIR)/monitor.o 
+	$(CC) -L$(LGW_PATH) $< $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o $(OBJDIR)/ghost.o $(OBJDIR)/endianext.o $(OBJDIR)/monitor.o -o $@ $(LIBS)
 
 
 ### EOF

@@ -1,5 +1,5 @@
 /*
- * endian.c
+ * endianext.c
  *
  *  Created on: Aug 5, 2016
  *      Author: ruud vlaming

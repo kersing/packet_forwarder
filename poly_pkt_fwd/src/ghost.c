@@ -36,7 +36,7 @@
 #include <pthread.h>
 #include "trace.h"
 #include "ghost.h"
-#include "endian.h"
+#include "endianext.h"
 
 
 
