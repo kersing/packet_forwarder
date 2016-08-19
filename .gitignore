@@ -7,7 +7,7 @@
 .project
 .settings/
 
-basic_pkt_fwd/basic_pkt_fwd
-gps_pkt_fwd/gps_pkt_fwd
-beacon_pkt_fwd/beacon_pkt_fwd
+util_ack/util_ack
+util_sink/util_sink
+util_tx_test/util_tx_test
 poly_pkt_fwd/poly_pkt_fwd
