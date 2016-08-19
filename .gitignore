@@ -10,4 +10,5 @@
 util_ack/util_ack
 util_sink/util_sink
 util_tx_test/util_tx_test
+lora_pkt_fwd/lora_pkt_fwd
 poly_pkt_fwd/poly_pkt_fwd
