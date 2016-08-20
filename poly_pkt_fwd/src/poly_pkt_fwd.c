@@ -118,7 +118,7 @@ Maintainer for TTN: Ruud Vlaming
 #define MIN_FSK_PREAMB  3 /* minimum FSK preamble length for this application */
 #define STD_FSK_PREAMB  4
 
-#define STATUS_SIZE		2048 //
+#define STATUS_SIZE		3072
 #define TX_BUFF_SIZE    ((540 * NB_PKT_MAX) + 30 + STATUS_SIZE)
 
 /* -------------------------------------------------------------------------- */
@@ -1775,74 +1775,104 @@ int main(void)
         /* generate a JSON report (will be sent to server by upstream thread) */
 
      	/* Check which format to use */
-     	bool semtech_format = strcmp(stat_format,"semtech") == 0;
-     	bool lorank_format  = strcmp(stat_format,"lorank")  == 0;
-        JSON_Value *root_value = NULL;
-        JSON_Object *root_object = NULL;
-		if (statusstream_enabled == true) {
-			if (lorank_format) {
-	        root_value  = json_value_init_object();
-	        root_object = json_value_get_object(root_value);
-	        json_object_dotset_string(       root_object, "timestamp",                                    iso_timestamp);
-	        json_object_dotset_string(       root_object, "device.id",                                    gateway_id);
-	        json_object_dotset_number(       root_object, "device.latitude",                              cp_gps_coord.lat);
-	        json_object_dotset_number(       root_object, "device.longitude",                             cp_gps_coord.lon);
-	        json_object_dotset_number(       root_object, "device.altitude",                              cp_gps_coord.alt);
-	        json_object_dotset_number(       root_object, "device.uptime",                                current_time - startup_time);
-	        json_object_dotset_string(       root_object, "device.platform",                              platform);
-	        json_object_dotset_string(       root_object, "device.email",                                 email);
-	        json_object_dotset_string(       root_object, "device.description",                           description);
-	        json_object_dotset_number(       root_object, "current.up_radio_packets_received",            cp_nb_rx_rcv);
-	        json_object_dotset_number(       root_object, "current.up_radio_packets_crc_good",            cp_nb_rx_ok);
-	        json_object_dotset_number(       root_object, "current.up_radio_packets_crc_bad",             cp_nb_rx_bad);
-	        json_object_dotset_number(       root_object, "current.up_radio_packets_crc_absent",          cp_nb_rx_nocrc);
-	        json_object_dotset_number(       root_object, "current.up_radio_packets_dropped",             cp_nb_rx_drop);
-	        json_object_dotset_number(       root_object, "current.up_radio_packets_forwarded",           cp_up_pkt_fwd);
-	        json_object_dotset_int_array(    root_object, "current.up_server_datagrams_send",             ar_up_dgram_sent,serv_count);
-	        json_object_dotset_int_array(    root_object, "current.up_server_datagrams_acknowledged",     ar_up_ack_rcv,serv_count);
-	        json_object_dotset_int_array(    root_object, "current.down_heartbeat_send",                  ar_dw_pull_sent,serv_count);
-	        json_object_dotset_int_array(    root_object, "current.down_heartbeat_received",              ar_dw_ack_rcv,serv_count);
-	        json_object_dotset_int_array(    root_object, "current.down_server_datagrams_received",       ar_dw_dgram_rcv,serv_count);
-	        json_object_dotset_int_array(    root_object, "current.down_server_datagrams_accepted",       ar_dw_dgram_acp,serv_count);
-	        json_object_dotset_number(       root_object, "current.down_radio_packets_succes",            cp_nb_tx_ok);
-	        json_object_dotset_number(       root_object, "current.down_radio_packets_failure",           cp_nb_tx_fail);
-	        json_object_dotset_number(       root_object, "current.down_radio_packets_collision_packet",  cp_nb_tx_rejected_collision_packet);
-	        json_object_dotset_number(       root_object, "current.down_radio_packets_collision_beacon",  cp_nb_tx_rejected_collision_beacon);
-	        json_object_dotset_number(       root_object, "current.down_radio_packets_too_early",         cp_nb_tx_rejected_too_early);
-	        json_object_dotset_number(       root_object, "current.down_radio_packets_too_late",          cp_nb_tx_rejected_too_late);
-	        json_object_dotset_number(       root_object, "current.down_beacon_packets_queued",           cp_nb_beacon_queued);
-	        json_object_dotset_number(       root_object, "current.down_beacon_packets_send",             cp_nb_beacon_sent);
-	        json_object_dotset_number(       root_object, "current.down_beacon_packets_rejected",         cp_nb_beacon_rejected);
-	        json_object_dotset_number(       root_object, "performance.up_radio_packet_quality",          move_up_rx_quality);
-	        json_object_dotset_double_array( root_object, "performance.up_server_datagram_quality",       move_up_ack_quality,serv_count);
-	        json_object_dotset_double_array( root_object, "performance.down_server_heartbeat_quality",    move_dw_ack_quality,serv_count);
-	        json_object_dotset_double_array( root_object, "performance.down_server_datagram_quality",     move_dw_datagram_quality,serv_count);
-	        json_object_dotset_double_array( root_object, "performance.down_radio_packet_quality",        move_dw_receive_quality,serv_count);
-	        json_object_dotset_number(       root_object, "performance.down_beacon_packet_quality",       move_dw_beacon_quality);
+     	bool semtech_format       =  strcmp(stat_format,"semtech") == 0;
+     	bool lorank_idee_verbose  =  strcmp(stat_format,"idee_verbose")  == 0;
+     	bool lorank_idee_concise  =  strcmp(stat_format,"idee_concise")  == 0;
+     	bool has_stat_file        =  stat_file[0] != 0;
+        JSON_Value *root_value_verbose    = NULL;
+        JSON_Object *root_object_verbose  = NULL;
+        JSON_Value *root_value_concise    = NULL;
+        JSON_Object *root_object_concise  = NULL;
+		if (statusstream_enabled == true || has_stat_file == true) {
+	        root_value_verbose  = json_value_init_object();
+	        root_object_verbose = json_value_get_object(root_value_verbose);
+            json_object_dotset_string(       root_object_verbose, "timestamp",                                    iso_timestamp);
+            json_object_dotset_string(       root_object_verbose, "device.id",                                    gateway_id);
+            json_object_dotset_number(       root_object_verbose, "device.latitude",                              cp_gps_coord.lat);
+            json_object_dotset_number(       root_object_verbose, "device.longitude",                             cp_gps_coord.lon);
+            json_object_dotset_number(       root_object_verbose, "device.altitude",                              cp_gps_coord.alt);
+            json_object_dotset_number(       root_object_verbose, "device.uptime",                                current_time - startup_time);
+            json_object_dotset_string(       root_object_verbose, "device.platform",                              platform);
+            json_object_dotset_string(       root_object_verbose, "device.email",                                 email);
+            json_object_dotset_string(       root_object_verbose, "device.description",                           description);
+            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_received",            cp_nb_rx_rcv);
+            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_crc_good",            cp_nb_rx_ok);
+            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_crc_bad",             cp_nb_rx_bad);
+            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_crc_absent",          cp_nb_rx_nocrc);
+            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_dropped",             cp_nb_rx_drop);
+            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_forwarded",           cp_up_pkt_fwd);
+            json_object_dotset_int_array(    root_object_verbose, "current.up_server_datagrams_send",             ar_up_dgram_sent,serv_count);
+            json_object_dotset_int_array(    root_object_verbose, "current.up_server_datagrams_acknowledged",     ar_up_ack_rcv,serv_count);
+            json_object_dotset_int_array(    root_object_verbose, "current.down_heartbeat_send",                  ar_dw_pull_sent,serv_count);
+            json_object_dotset_int_array(    root_object_verbose, "current.down_heartbeat_received",              ar_dw_ack_rcv,serv_count);
+            json_object_dotset_int_array(    root_object_verbose, "current.down_server_datagrams_received",       ar_dw_dgram_rcv,serv_count);
+            json_object_dotset_int_array(    root_object_verbose, "current.down_server_datagrams_accepted",       ar_dw_dgram_acp,serv_count);
+            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_succes",            cp_nb_tx_ok);
+            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_failure",           cp_nb_tx_fail);
+            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_collision_packet",  cp_nb_tx_rejected_collision_packet);
+            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_collision_beacon",  cp_nb_tx_rejected_collision_beacon);
+            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_too_early",         cp_nb_tx_rejected_too_early);
+            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_too_late",          cp_nb_tx_rejected_too_late);
+            json_object_dotset_number(       root_object_verbose, "current.down_beacon_packets_queued",           cp_nb_beacon_queued);
+            json_object_dotset_number(       root_object_verbose, "current.down_beacon_packets_send",             cp_nb_beacon_sent);
+            json_object_dotset_number(       root_object_verbose, "current.down_beacon_packets_rejected",         cp_nb_beacon_rejected);
+            json_object_dotset_number(       root_object_verbose, "performance.up_radio_packet_quality",          move_up_rx_quality);
+            json_object_dotset_double_array( root_object_verbose, "performance.up_server_datagram_quality",       move_up_ack_quality,serv_count);
+            json_object_dotset_double_array( root_object_verbose, "performance.down_server_heartbeat_quality",    move_dw_ack_quality,serv_count);
+            json_object_dotset_double_array( root_object_verbose, "performance.down_server_datagram_quality",     move_dw_datagram_quality,serv_count);
+            json_object_dotset_double_array( root_object_verbose, "performance.down_radio_packet_quality",        move_dw_receive_quality,serv_count);
+            json_object_dotset_number(       root_object_verbose, "performance.down_beacon_packet_quality",       move_dw_beacon_quality);
 	        }
-	        if (stat_file[0] != 0) {
-	        	if (json_serialize_to_file_pretty(root_value,stat_file_tmp) == JSONSuccess)
-	        		rename(stat_file_tmp,stat_file);
-	        }
-        pthread_mutex_lock(&mx_stat_rep);
-        if (semtech_format == true) {
-        	if ((gps_enabled == true) && (coord_ok == true)) {
-				snprintf(status_report, STATUS_SIZE, "{\"time\":\"%s\",\"lati\":%.5f,\"long\":%.5f,\"alti\":%i,\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}", stat_timestamp, cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
-        	} else {
-				snprintf(status_report, STATUS_SIZE, "{\"time\":\"%s\",\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}", stat_timestamp, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
-        	}
-	     	printf("# Semtech status report send. \n");
-        } else if (lorank_format == true) {
-            json_serialize_to_buffer(root_value,status_report,STATUS_SIZE);
-            json_value_free(root_value);
-	     	printf("# Lorank status report send. \n");
-        } else 	{
-        	printf("# NO status report send (format unknown!) \n");
+		if (statusstream_enabled == true && lorank_idee_concise) {
+		    root_value_concise  = json_value_init_object();
+	        root_object_concise = json_value_get_object(root_value_concise);
+            json_object_dotset_string(       root_object_concise, "time",           iso_timestamp);
+            json_object_dotset_string(       root_object_concise, "dev.id",         gateway_id);
+            json_object_dotset_number(       root_object_concise, "dev.lat",        cp_gps_coord.lat);
+            json_object_dotset_number(       root_object_concise, "dev.lon",        cp_gps_coord.lon);
+            json_object_dotset_number(       root_object_concise, "dev.alt",        cp_gps_coord.alt);
+            json_object_dotset_number(       root_object_concise, "dev.up",         current_time - startup_time);
+            json_object_dotset_string(       root_object_concise, "dev.pfrm",       platform);
+            json_object_dotset_string(       root_object_concise, "dev.email",      email);
+            json_object_dotset_string(       root_object_concise, "dev.desc",       description);
+            if (upstream_enabled == true) {
+              json_object_dotset_number(       root_object_concise, "prf.up_rf",      move_up_rx_quality);
+              json_object_dotset_double_array( root_object_concise, "prf.up_srv_dg",  move_up_ack_quality,serv_count);
+            }
+            if (downstream_enabled == true) {
+              json_object_dotset_double_array( root_object_concise, "prf.dw_srv_hb",  move_dw_ack_quality,serv_count);
+              json_object_dotset_double_array( root_object_concise, "prf.dw_srv_dg",  move_dw_datagram_quality,serv_count);
+              json_object_dotset_double_array( root_object_concise, "prf.dw_rf",      move_dw_receive_quality,serv_count);
+              json_object_dotset_number(       root_object_concise, "prf.dw_bcn",     move_dw_beacon_quality);
+            }
+	    }
+        if (has_stat_file == true) {
+        	if (json_serialize_to_file_pretty(root_value_verbose,stat_file_tmp) == JSONSuccess)
+        		rename(stat_file_tmp,stat_file);
         }
-
-        report_ready = true;
-        pthread_mutex_unlock(&mx_stat_rep);
+		if (statusstream_enabled == true) {
+			pthread_mutex_lock(&mx_stat_rep);
+			if (semtech_format == true) {
+				if ((gps_enabled == true) && (coord_ok == true)) {
+					snprintf(status_report, STATUS_SIZE, "{\"time\":\"%s\",\"lati\":%.5f,\"long\":%.5f,\"alti\":%i,\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}", stat_timestamp, cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
+				} else {
+					snprintf(status_report, STATUS_SIZE, "{\"time\":\"%s\",\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}", stat_timestamp, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
+				}
+				printf("# Semtech status report send. \n");
+			} else if (lorank_idee_verbose == true) {
+				json_serialize_to_buffer(root_value_verbose,status_report,STATUS_SIZE);
+				printf("# Ideetron verbose status report send. \n");
+			} else if (lorank_idee_concise == true) {
+				json_serialize_to_buffer(root_value_concise,status_report,STATUS_SIZE);
+				printf("# Ideetron concise status report send. \n");
+			} else 	{
+				printf("# NO status report send (format unknown!) \n");
+			}
+			report_ready = true;
+			pthread_mutex_unlock(&mx_stat_rep);
 		}
+		if (statusstream_enabled == true || has_stat_file == true)  json_value_free(root_value_verbose);
+		if (statusstream_enabled == true && lorank_idee_concise)    json_value_free(root_value_concise);
 	    printf("##### END #####\n");
 	}
 
@@ -2308,8 +2338,11 @@ void thread_up(void) {
             if (j > 0) {
                 buff_index += j;
             } else {
-                MSG("ERROR: [up] failed to add field the status report to the transmission buffer.\n");
-                continue; /* skip that packet*/
+            	/* If the status does not fit the buffer (this should NOT happen btw), just delay it for the next
+            	 * round. It is certainly not a reason to drop packets. Remove the last separator and give a warning. */
+            	--buff_index;
+                MSG("WARNING: [up] failed to add field the status report to the transmission buffer.\n");
+                //continue; /* skip that packet*/
                 //exit(EXIT_FAILURE);
             }
         }
