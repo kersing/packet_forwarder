@@ -139,7 +139,9 @@ static uint64_t lgwm = 0; /* Lora gateway MAC address */
 static char serv_addr[MAX_SERVERS][64]; /* addresses of the server (host name or IPv4/IPv6) */
 static char serv_port_up[MAX_SERVERS][8]; /* servers port for upstream traffic */
 static char serv_port_down[MAX_SERVERS][8]; /* servers port for downstream traffic */
-static bool serv_live[MAX_SERVERS]; /* Register if the server could be defined. */
+static bool serv_live[MAX_SERVERS];   /* Register if the server could be defined. */
+static time_t serv_contact[MAX_SERVERS]; /* last upstream contact time */
+static int serv_max_stall[MAX_SERVERS];  /* maximal acceptable down time of server. */
 static int keepalive_time = DEFAULT_KEEPALIVE; /* send a PULL_DATA request every X seconds, negative = disabled */
 
 /* statistics collection configuration variables */
@@ -177,6 +179,7 @@ static struct tref time_reference_gps; /* time reference used for UTC <-> timest
 static struct coord_s reference_coord;
 
 /* Enable faking the GPS coordinates of the gateway */
+//TODO: Now there are 4 different mutual dependent booleans to describe the gps state, this is a code smell, make an enumeration.
 static bool gps_fake_enable; /* fake coordinates override real coordinates */
 
 /* measurements to establish statistics */
@@ -264,7 +267,7 @@ static bool radiostream_enabled  = true;    /* controls the data flow from radio
 static bool statusstream_enabled = true;    /* controls the data flow of status information to server */
 
 /* Informal status fields */
-static char gateway_id[16]  = "";                /* string form of gateway mac address */
+static char gateway_id[20]  = "";                /* string form of gateway mac address */
 static char platform[24]    = DISPLAY_PLATFORM;  /* platform definition */
 static char email[40]       = "";                /* used for contact email */
 static char description[64] = "";                /* used for free form description */
@@ -684,6 +687,7 @@ static int parse_gateway_configuration(const char * conf_file) {
     JSON_Value *val = NULL; /* needed to detect the absence of some fields */
 	JSON_Value *val1 = NULL; /* needed to detect the absence of some fields */
 	JSON_Value *val2 = NULL; /* needed to detect the absence of some fields */
+	JSON_Value *val3 = NULL; /* needed to detect the absence of some fields */
 	JSON_Array *servers = NULL;
 	JSON_Array *syscalls = NULL;
     const char *str; /* pointer to sub-strings in the JSON data */
@@ -730,10 +734,12 @@ static int parse_gateway_configuration(const char * conf_file) {
 			val = json_object_get_value(nw_server, "serv_enabled");
 			val1 = json_object_get_value(nw_server, "serv_port_up");
 			val2 = json_object_get_value(nw_server, "serv_port_down");
+			val3 = json_object_get_value(nw_server, "serv_max_stall");
 			/* Try to read the fields */
 			if (str != NULL)  strncpy(serv_addr[ic], str, sizeof serv_addr[ic]);
 			if (val1 != NULL) snprintf(serv_port_up[ic], sizeof serv_port_up[ic], "%u", (uint16_t)json_value_get_number(val1));
 			if (val2 != NULL) snprintf(serv_port_down[ic], sizeof serv_port_down[ic], "%u", (uint16_t)json_value_get_number(val2));
+			if (val3 != NULL) serv_max_stall[ic] = (int) json_value_get_number(val3); else serv_max_stall[ic] = 0;
 			/* If there is no server name we can only silently progress to the next entry */
 			if (str == NULL) {
 				continue;
@@ -1156,7 +1162,7 @@ static double moveave(double old, uint32_t utel, uint32_t unoe) {
 	else                    { return (old*stat_damping + (dtel/dnoe)*(100-stat_damping))/100; }
 }
 
-//TODO: Check if this is a propper generalization of servers!
+//TODO: Check if this is a proper generalization of servers!
 static int send_tx_ack(int ic, uint8_t token_h, uint8_t token_l, enum jit_error_e error) {
     uint8_t buff_ack[64]; /* buffer to give feedback to server */
     int buff_index;
@@ -1307,6 +1313,7 @@ int main(void)
     int ar_dw_ack_rcv[MAX_SERVERS]    = {0};
     int ar_dw_dgram_rcv[MAX_SERVERS]  = {0};
     int ar_dw_dgram_acp[MAX_SERVERS]  = {0};
+    int stall_time[MAX_SERVERS]       = {0};
 
     /* moving averages for overall statistics */
     double move_up_rx_quality                     =  0;   /* ratio of received crc_good packets over total received packets */
@@ -1316,9 +1323,10 @@ int main(void)
     double move_dw_receive_quality[MAX_SERVERS]   = {0};  /* ratio of succesfully aired data packets to total received datapackets */
     double move_dw_beacon_quality                 =  0;   /* ratio of succesfully sent to queued for the beacon */
 
-    /* GPS coordinates variables */
+    /* GPS coordinates and variables */
     bool coord_ok = false;
     struct coord_s cp_gps_coord = {0.0, 0.0, 0};
+    char gps_state[16] = "unknown";
     //struct coord_s cp_gps_err;
 
     /* statistics variable */
@@ -1410,6 +1418,10 @@ int main(void)
 	/* Loop through all possible servers */
 	for (ic = 0; ic < serv_count; ic++) {
 
+	/* Initialize server variables */
+	serv_live[ic]    = false;
+	serv_contact[ic] = time(NULL);
+
     /* look for server address w/ upstream port */
 		i = getaddrinfo(serv_addr[ic], serv_port_up[ic], &hints, &result);
     if (i != 0) {
@@ -1497,6 +1509,7 @@ int main(void)
 	// there UDP handling erroneously, or any other temporal obstruction in the communication
 	// path (broken stacks in routers for example) Now, contact may be lost for ever and a manual
 	// restart at the this side is required.
+	// => This has been 'resolved' bij allowing the forwarder to exit at stalled servers.
 
     /* starting the concentrator */
 	if (radiostream_enabled == true) {
@@ -1590,11 +1603,6 @@ int main(void)
         /* wait for next reporting interval */
         wait_ms(1000 * stat_interval);
 
-        /* get timestamp for statistics */
-        current_time = time(NULL);
-        strftime(stat_timestamp, sizeof stat_timestamp, "%F %T %Z", gmtime(&current_time));
-        strftime(iso_timestamp, sizeof stat_timestamp, "%FT%TZ", gmtime(&current_time));
-
         /* access upstream statistics, copy and reset them */
         pthread_mutex_lock(&mx_meas_up);
         cp_nb_rx_rcv       = meas_nb_rx_rcv;
@@ -1616,7 +1624,15 @@ int main(void)
         meas_up_payload_byte = 0;
         memset(meas_up_dgram_sent, 0, sizeof meas_up_dgram_sent);
         memset(meas_up_ack_rcv, 0, sizeof meas_up_ack_rcv);
+        /* get timestamp for statistics (must be done inside the lock) */
+        current_time = time(NULL);
+        for (i=0; i<serv_count; i++) { stall_time[i] = (int) (current_time - serv_contact[i]); }
         pthread_mutex_unlock(&mx_meas_up);
+
+        /* Do the math */
+        strftime(stat_timestamp, sizeof stat_timestamp, "%F %T %Z", gmtime(&current_time));
+        strftime(iso_timestamp, sizeof stat_timestamp, "%FT%TZ", gmtime(&current_time));
+
         if (cp_nb_rx_rcv > 0) {
             rx_ok_ratio = (float)cp_nb_rx_ok / (float)cp_nb_rx_rcv;
             rx_bad_ratio = (float)cp_nb_rx_bad / (float)cp_nb_rx_rcv;
@@ -1689,6 +1705,13 @@ int main(void)
             coord_ok = true;
             cp_gps_coord = reference_coord;
         }
+
+        /* Determine the GPS state in human understandable form */
+        { if      (gps_enabled == false)      strncpy(gps_state,"disabled", sizeof gps_state);
+          else if (gps_fake_enable == true)   strncpy(gps_state,"fake",     sizeof gps_state);
+          else if (gps_active == false)       strncpy(gps_state,"inactive", sizeof gps_state);
+          else if (gps_ref_valid == false)    strncpy(gps_state,"searching",sizeof gps_state);
+          else                                strncpy(gps_state,"locked",   sizeof gps_state); }
 
         /* calculate the moving averages */
         move_up_rx_quality =  moveave(move_up_rx_quality,cp_nb_rx_ok,cp_nb_rx_rcv);
@@ -1786,12 +1809,25 @@ int main(void)
 		if (statusstream_enabled == true || has_stat_file == true) {
 	        root_value_verbose  = json_value_init_object();
 	        root_object_verbose = json_value_get_object(root_value_verbose);
-            json_object_dotset_string(       root_object_verbose, "timestamp",                                    iso_timestamp);
+	    	JSON_Value *servers_array_value  = json_value_init_array();
+	        JSON_Array *servers_array_object = json_value_get_array(servers_array_value);
+	    	for (ic = 0; ic < serv_count; ic++)
+	    	{ JSON_Value *sub_value = json_value_init_object();
+	    	  JSON_Object *sub_object = json_value_get_object(sub_value);
+	    	  json_object_set_string(sub_object, "name", serv_addr[ic]);
+	    	  json_object_set_boolean(sub_object, "found", serv_live[ic] == true);
+	    	  if (serv_live[ic] == true) json_object_set_number(sub_object, "last_seen", stall_time[ic]); else json_object_set_string(sub_object, "last_seen", "never");
+	    	  json_array_append_value(servers_array_object,sub_value); }
+            json_object_set_string(          root_object_verbose, "timestamp",                                    iso_timestamp);
+            json_object_set_boolean(         root_object_verbose, "up_active",                                    upstream_enabled == true);
+            json_object_set_boolean(         root_object_verbose, "down_active",                                  downstream_enabled == true);
+	    	json_object_set_value(           root_object_verbose, "servers",                                      servers_array_value);
             json_object_dotset_string(       root_object_verbose, "device.id",                                    gateway_id);
             json_object_dotset_number(       root_object_verbose, "device.latitude",                              cp_gps_coord.lat);
             json_object_dotset_number(       root_object_verbose, "device.longitude",                             cp_gps_coord.lon);
             json_object_dotset_number(       root_object_verbose, "device.altitude",                              cp_gps_coord.alt);
             json_object_dotset_number(       root_object_verbose, "device.uptime",                                current_time - startup_time);
+            json_object_dotset_string(       root_object_verbose, "device.gps",                                   gps_state);
             json_object_dotset_string(       root_object_verbose, "device.platform",                              platform);
             json_object_dotset_string(       root_object_verbose, "device.email",                                 email);
             json_object_dotset_string(       root_object_verbose, "device.description",                           description);
@@ -1874,6 +1910,20 @@ int main(void)
 		if (statusstream_enabled == true || has_stat_file == true)  json_value_free(root_value_verbose);
 		if (statusstream_enabled == true && lorank_idee_concise)    json_value_free(root_value_concise);
 	    printf("##### END #####\n");
+
+	    /* Exit strategies. */
+	    /* Server that are 'off-line may be a reason to exit */
+	    for (ic = 0; ic < serv_count; ic++)
+	    { if ( (serv_max_stall[ic] > 0) && (stall_time[ic] > serv_max_stall[ic]) )
+	      { MSG("ERROR: [main] for server %s stalled for %i seconds, terminating packet forwarder.\n", serv_addr[ic], stall_time[ic]);
+			exit(EXIT_FAILURE); } }
+
+	    /* Code of gonzalocasas to catch transient hardware failures */
+		uint32_t trig_cnt_us;
+		if (lgw_get_trigcnt(&trig_cnt_us) == LGW_HAL_SUCCESS && trig_cnt_us == 0x7E000000) {
+			MSG("ERROR: [main] unintended SX1301 reset detected, terminating packet forwarder.\n");
+			exit(EXIT_FAILURE);
+		}
 	}
 
     /* wait for upstream thread to finish (1 fetch cycle max) */
@@ -1927,11 +1977,6 @@ void thread_up(void) {
     struct lgw_pkt_rx_s *p; /* pointer on a RX packet */
     int nb_pkt;
 
-	/* local timestamp variables until we get accurate GPS time */
-	struct timespec fetch_time;
-	struct tm * x1;
-	char fetch_timestamp[28]; /* timestamp as a text string */
-
     /* local copy of GPS time reference */
     bool ref_ok = false; /* determine if GPS time reference must be used or not */
     struct tref local_ref; /* time reference used for UTC <-> timestamp conversion */
@@ -1955,6 +2000,10 @@ void thread_up(void) {
 
     /* report management variable */
     bool send_report = false;
+
+    /* variables for identification */
+    char iso_timestamp[24];
+    time_t system_time;
 
 	MSG("INFO: [up] Thread activated for all servers.\n");
 
@@ -2013,11 +2062,6 @@ void thread_up(void) {
             ref_ok = false;
         }
 
-		/* local timestamp generation until we get accurate GPS time */
-		clock_gettime(CLOCK_REALTIME, &fetch_time);
-		x1 = gmtime(&(fetch_time.tv_sec)); /* split the UNIX timestamp to its calendar components */
-		snprintf(fetch_timestamp, sizeof fetch_timestamp, "%04i-%02i-%02iT%02i:%02i:%02i.%06liZ", (x1->tm_year)+1900, (x1->tm_mon)+1, x1->tm_mday, x1->tm_hour, x1->tm_min, x1->tm_sec, (fetch_time.tv_nsec)/1000); /* ISO 8601 format */
-
         /* start composing datagram with the header */
         token_h = (uint8_t)rand(); /* random token */
         token_l = (uint8_t)rand(); /* random token */
@@ -2026,8 +2070,21 @@ void thread_up(void) {
         buff_index = 12; /* 12-byte header */
 
         /* start of JSON structure */
-        memcpy((void *)(buff_up + buff_index), (void *)"{\"rxpk\":[", 9);
-        buff_index += 9;
+
+        /* Make known who and when we are, define the start of the packet array. */
+        system_time = time(NULL);
+        strftime(iso_timestamp, sizeof iso_timestamp, "%FT%TZ", gmtime(&system_time));
+        j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, "{\"time\":\"%s\",\"id\":\"%s\",\"rxpk\":[", iso_timestamp, gateway_id);
+        if (j > 0) {
+            buff_index += j;
+        } else {
+        	MSG("ERROR: [up] failed to define the transmission buffer, this is fatal, sorry.\n");
+        	exit(EXIT_FAILURE);
+        }
+
+        // this has been incorporated in the above (checked!) definition.
+        //memcpy((void *)(buff_up + buff_index), (void *)"{\"rxpk\":[", 9);
+        //buff_index += 9;
 
         /* serialize Lora packets metadata and payload */
         pkt_in_dgram = 0;
@@ -2106,10 +2163,8 @@ void thread_up(void) {
             }
 
             /* Packet RX time (GPS based), 37 useful chars */
-			//TODO: From the block below only one can be exectuted, decide on the presence of GPS.
-			// This has not been coded well.
-			if (gps_active) {
-            if (ref_ok == true) {
+            //TODO: Ga na of dit packet zonder gps inderdaad afwezig is.
+			if (ref_ok == true) {
                 /* convert packet timestamp to UTC absolute time */
                 j = lgw_cnt2utc(local_ref, p->count_us, &pkt_utc_time);
                 if (j == LGW_GPS_SUCCESS) {
@@ -2125,11 +2180,6 @@ void thread_up(void) {
                     }
                 }
             }
-			} else {
-				memcpy((void *)(buff_up + buff_index), (void *)",\"time\":\"???????????????????????????\"", 37);
-				memcpy((void *)(buff_up + buff_index + 9), (void *)fetch_timestamp, 27);
-				buff_index += 37;
-			}
 
             /* Packet concentrator channel, RF chain & RX frequency, 34-36 useful chars */
             j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, ",\"chan\":%1u,\"rfch\":%1u,\"freq\":%.6lf", p->if_chain, p->rf_chain, ((double)p->freq_hz / 1e6));
@@ -2382,6 +2432,7 @@ void thread_up(void) {
                 continue;
             } else {
 				LOGGER("INFO: [up] PUSH_ACK for server %s received in %i ms\n", serv_addr[ic], (int)(1000 * difftimespec(recv_time, send_time)));
+				serv_contact[ic] = time(NULL);
                 meas_up_ack_rcv[ic] += 1;
                 break;
             }

@@ -229,10 +229,12 @@
         [ { "server_address": "127.0.0.1",
             "serv_port_up": 1680,
             "serv_port_down": 1681,
+            "serv_max_stall": 0,      
             "serv_enabled": true },
           { "server_address": "iot.semtech.com",
             "serv_port_up": 1680,
             "serv_port_down": 1680,
+            "serv_max_stall": 0,
             "serv_enabled": true } ],
         /* adjust the following parameters for your network */
         "keepalive_interval": 10,
