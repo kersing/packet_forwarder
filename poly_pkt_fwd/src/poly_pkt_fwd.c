@@ -714,7 +714,7 @@ static int parse_gateway_configuration(const char * conf_file) {
     /* gateway unique identifier (aka MAC address) (optional) */
     str = json_object_get_string(conf_obj, "gateway_ID");
     if (str != NULL) {
-    	strncpy(gateway_id, str, sizeof gateway_id);
+    	snprintf(gateway_id, sizeof gateway_id, "%s",str);
         sscanf(str, "%llx", &ull);
         lgwm = ull;
         MSG("INFO: gateway MAC address is configured to %016llX\n", ull);
@@ -736,7 +736,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 			val2 = json_object_get_value(nw_server, "serv_port_down");
 			val3 = json_object_get_value(nw_server, "serv_max_stall");
 			/* Try to read the fields */
-			if (str != NULL)  strncpy(serv_addr[ic], str, sizeof serv_addr[ic]);
+			if (str != NULL)  snprintf(serv_addr[ic], sizeof serv_addr[ic], "%s",str);
 			if (val1 != NULL) snprintf(serv_port_up[ic], sizeof serv_port_up[ic], "%u", (uint16_t)json_value_get_number(val1));
 			if (val2 != NULL) snprintf(serv_port_down[ic], sizeof serv_port_down[ic], "%u", (uint16_t)json_value_get_number(val2));
 			if (val3 != NULL) serv_max_stall[ic] = (int) json_value_get_number(val3); else serv_max_stall[ic] = 0;
@@ -771,7 +771,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 		if ((str != NULL) && (val1 != NULL) && (val2 != NULL)) {
 			serv_count = 1;
 			serv_live[0] = false;
-			strncpy(serv_addr[0], str, sizeof serv_addr[0]);
+			snprintf(serv_addr[0], sizeof serv_addr[0], "%s",str);
 			snprintf(serv_port_up[0], sizeof serv_port_up[0], "%u", (uint16_t)json_value_get_number(val1));
 			snprintf(serv_port_down[0], sizeof serv_port_down[0], "%u", (uint16_t)json_value_get_number(val2));
 			MSG("INFO: Server configured to \"%s\", with port up \"%s\" and port down \"%s\"\n", serv_addr[0],serv_port_up[0],serv_port_down[0]);
@@ -783,9 +783,9 @@ static int parse_gateway_configuration(const char * conf_file) {
 	//TODO: Eliminate this default behavior, the server should be well configured or stop.
 	if (serv_count == 0) {
 		MSG("INFO: Using defaults for server and ports (specific ports are ignored if no server is defined)");
-		strncpy(serv_addr[0],STR(DEFAULT_SERVER),sizeof(STR(DEFAULT_SERVER)));
-		strncpy(serv_port_up[0],STR(DEFAULT_PORT_UP),sizeof(STR(DEFAULT_PORT_UP)));
-		strncpy(serv_port_down[0],STR(DEFAULT_PORT_DW),sizeof(STR(DEFAULT_PORT_DW)));
+		snprintf(serv_addr[0],sizeof(serv_addr[0]),STR(DEFAULT_SERVER));
+		snprintf(serv_port_up[0],sizeof(serv_port_up[0]),STR(DEFAULT_PORT_UP));
+		snprintf(serv_port_down[0],sizeof(serv_port_down[0]),STR(DEFAULT_PORT_DW));
 		serv_live[0] = false;
 		serv_count = 1;
 	}
@@ -798,7 +798,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Found %i system calls in array.\n", mntr_sys_count);
 		for (i = 0; i < mntr_sys_count  && i < MNTR_SYS_MAX; i++) {
 			str = json_array_get_string(syscalls,i);
-			strncpy(mntr_sys_list[i], str, sizeof mntr_sys_list[i]);
+			snprintf(mntr_sys_list[i], sizeof mntr_sys_list[i],"%s",str);
 			MSG("INFO: System command %i: \"%s\"\n",i,mntr_sys_list[i]);
 		}
 	}
@@ -806,7 +806,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 	/* monitor hostname or IP address (optional) */
 	str = json_object_get_string(conf_obj, "monitor_address");
     if (str != NULL) {
-		strncpy(monitor_addr, str, sizeof monitor_addr);
+    	snprintf(monitor_addr, sizeof monitor_addr,"%s",str);
 		MSG("INFO: monitor hostname or IP address is configured to \"%s\"\n", monitor_addr);
     }
 
@@ -820,7 +820,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 	/* ghost hostname or IP address (optional) */
 	str = json_object_get_string(conf_obj, "ghost_address");
 	if (str != NULL) {
-		strncpy(ghost_addr, str, sizeof ghost_addr);
+		snprintf(ghost_addr, sizeof ghost_addr,"%s",str);
 		MSG("INFO: ghost hostname or IP address is configured to \"%s\"\n", ghost_addr);
 	}
 
@@ -834,14 +834,14 @@ static int parse_gateway_configuration(const char * conf_file) {
 	/* name of format, currently recognized are semtech and lorank (optional) */
 	str = json_object_get_string(conf_obj, "stat_format");
 	if (str != NULL) {
-		strncpy(stat_format, str, sizeof stat_format);
+		snprintf(stat_format, sizeof stat_format,"%s",str);
 		MSG("INFO: format is configured to \"%s\"\n", stat_format);
 	}
 
 	/* name of file to write statistical info to (optional) */
 	str = json_object_get_string(conf_obj, "stat_file");
 	if (str != NULL) {
-		strncpy(stat_file, str, sizeof stat_file);
+		snprintf(stat_file, sizeof stat_file,"%s",str);
 		MSG("INFO: filename for statistical performance is configured to \"%s\"\n", stat_file);
 	}
 
@@ -894,14 +894,14 @@ static int parse_gateway_configuration(const char * conf_file) {
     /* GPS module TTY path (optional) */
     str = json_object_get_string(conf_obj, "gps_tty_path");
     if (str != NULL) {
-        strncpy(gps_tty_path, str, sizeof gps_tty_path);
+    	snprintf(gps_tty_path, sizeof gps_tty_path,"%s",str);
         MSG("INFO: GPS serial port path is configured to \"%s\"\n", gps_tty_path);
     }
 
 	/* SSH path (optional) */
 	str = json_object_get_string(conf_obj, "ssh_path");
 	if (str != NULL) {
-		strncpy(ssh_path, str, sizeof ssh_path);
+		snprintf(ssh_path, sizeof ssh_path,"%s",str);
 		MSG("INFO: SSH path is configured to \"%s\"\n", ssh_path);
 	}
 
@@ -922,7 +922,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 	/* NGROK path (optional) */
 	str = json_object_get_string(conf_obj, "ngrok_path");
 	if (str != NULL) {
-		strncpy(ngrok_path, str, sizeof ngrok_path);
+		snprintf(ngrok_path, sizeof ngrok_path,"%s",str);
 		MSG("INFO: NGROK path is configured to \"%s\"\n", ngrok_path);
 	}
 
@@ -1079,21 +1079,21 @@ static int parse_gateway_configuration(const char * conf_file) {
 	/* Platform read and override */
 	str = json_object_get_string(conf_obj, "platform");
 	if (str != NULL) {
-		if (strncmp(str, "*", 1) != 0) { strncpy(platform, str, sizeof platform); }
+		if (strncmp(str, "*", 1) != 0) { snprintf(platform, sizeof platform,"%s",str); }
 		MSG("INFO: Platform configured to \"%s\"\n", platform);
 	}
 
 	/* Read of contact email */
 	str = json_object_get_string(conf_obj, "contact_email");
 	if (str != NULL) {
-		strncpy(email, str, sizeof email);
+		snprintf(email, sizeof email,"%s",str);
 		MSG("INFO: Contact email configured to \"%s\"\n", email);
 	}
 
 	/* Read of description */
 	str = json_object_get_string(conf_obj, "description");
 	if (str != NULL) {
-		strncpy(description, str, sizeof description);
+		snprintf(description, sizeof description,"%s",str);
 		MSG("INFO: Description configured to \"%s\"\n", description);
 	}
 
@@ -1707,11 +1707,11 @@ int main(void)
         }
 
         /* Determine the GPS state in human understandable form */
-        { if      (gps_enabled == false)      strncpy(gps_state,"disabled", sizeof gps_state);
-          else if (gps_fake_enable == true)   strncpy(gps_state,"fake",     sizeof gps_state);
-          else if (gps_active == false)       strncpy(gps_state,"inactive", sizeof gps_state);
-          else if (gps_ref_valid == false)    strncpy(gps_state,"searching",sizeof gps_state);
-          else                                strncpy(gps_state,"locked",   sizeof gps_state); }
+        { if      (gps_enabled == false)      snprintf(gps_state, sizeof gps_state, "disabled");
+          else if (gps_fake_enable == true)   snprintf(gps_state, sizeof gps_state, "fake");
+          else if (gps_active == false)       snprintf(gps_state, sizeof gps_state, "inactive");
+          else if (gps_ref_valid == false)    snprintf(gps_state, sizeof gps_state, "searching");
+          else                                snprintf(gps_state, sizeof gps_state, "locked"); }
 
         /* calculate the moving averages */
         move_up_rx_quality =  moveave(move_up_rx_quality,cp_nb_rx_ok,cp_nb_rx_rcv);
@@ -1818,11 +1818,11 @@ int main(void)
 	    	  json_object_set_boolean(sub_object, "found", serv_live[ic] == true);
 	    	  if (serv_live[ic] == true) json_object_set_number(sub_object, "last_seen", stall_time[ic]); else json_object_set_string(sub_object, "last_seen", "never");
 	    	  json_array_append_value(servers_array_object,sub_value); }
-            json_object_set_string(          root_object_verbose, "timestamp",                                    iso_timestamp);
-            json_object_set_boolean(         root_object_verbose, "up_active",                                    upstream_enabled == true);
-            json_object_set_boolean(         root_object_verbose, "down_active",                                  downstream_enabled == true);
 	    	json_object_set_value(           root_object_verbose, "servers",                                      servers_array_value);
+            json_object_set_string(          root_object_verbose, "time",                                         iso_timestamp);
             json_object_dotset_string(       root_object_verbose, "device.id",                                    gateway_id);
+            json_object_dotset_boolean(      root_object_verbose, "device.up_active",                             upstream_enabled == true);
+            json_object_dotset_boolean(      root_object_verbose, "device.down_active",                           downstream_enabled == true);
             json_object_dotset_number(       root_object_verbose, "device.latitude",                              cp_gps_coord.lat);
             json_object_dotset_number(       root_object_verbose, "device.longitude",                             cp_gps_coord.lon);
             json_object_dotset_number(       root_object_verbose, "device.altitude",                              cp_gps_coord.alt);
@@ -1862,12 +1862,12 @@ int main(void)
 		if (statusstream_enabled == true && lorank_idee_concise) {
 		    root_value_concise  = json_value_init_object();
 	        root_object_concise = json_value_get_object(root_value_concise);
-            json_object_dotset_string(       root_object_concise, "time",           iso_timestamp);
             json_object_dotset_string(       root_object_concise, "dev.id",         gateway_id);
             json_object_dotset_number(       root_object_concise, "dev.lat",        cp_gps_coord.lat);
             json_object_dotset_number(       root_object_concise, "dev.lon",        cp_gps_coord.lon);
             json_object_dotset_number(       root_object_concise, "dev.alt",        cp_gps_coord.alt);
             json_object_dotset_number(       root_object_concise, "dev.up",         current_time - startup_time);
+            json_object_dotset_string(       root_object_concise, "dev.gps",        gps_state);
             json_object_dotset_string(       root_object_concise, "dev.pfrm",       platform);
             json_object_dotset_string(       root_object_concise, "dev.email",      email);
             json_object_dotset_string(       root_object_concise, "dev.desc",       description);
@@ -1886,16 +1886,18 @@ int main(void)
         	if (json_serialize_to_file_pretty(root_value_verbose,stat_file_tmp) == JSONSuccess)
         		rename(stat_file_tmp,stat_file);
         }
-		if (statusstream_enabled == true) {
+        if (statusstream_enabled == true) {
 			pthread_mutex_lock(&mx_stat_rep);
 			if (semtech_format == true) {
 				if ((gps_enabled == true) && (coord_ok == true)) {
-					snprintf(status_report, STATUS_SIZE, "{\"time\":\"%s\",\"lati\":%.5f,\"long\":%.5f,\"alti\":%i,\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}", stat_timestamp, cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
+					snprintf(status_report, STATUS_SIZE, "{\"stat\":{\"time\":\"%s\",\"lati\":%.5f,\"long\":%.5f,\"alti\":%i,\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}}", stat_timestamp, cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
 				} else {
-					snprintf(status_report, STATUS_SIZE, "{\"time\":\"%s\",\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}", stat_timestamp, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
+					snprintf(status_report, STATUS_SIZE, "{\"stat\":{\"time\":\"%s\",\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}}", stat_timestamp, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
 				}
 				printf("# Semtech status report send. \n");
 			} else if (lorank_idee_verbose == true) {
+				/* The time field is already permanently included in the packet stream, note that may be a little later. */
+				json_object_remove(root_object_verbose,"time");
 				json_serialize_to_buffer(root_value_verbose,status_report,STATUS_SIZE);
 				printf("# Ideetron verbose status report send. \n");
 			} else if (lorank_idee_concise == true) {
@@ -2044,6 +2046,10 @@ void thread_up(void) {
         /* check if there are status report to send */
         send_report = report_ready; /* copy the variable so it doesn't change mid-function */
         /* no mutex, we're only reading */
+        /* => ???, depends on memory model, caching, architecture and compiler optimization.
+         *   However since the copying enforces a delayed decision, and the actual reading writing of
+         *   the report is protected, it seems the worst that can happen is that you get an old report.
+         */
 
         /* wait a short time if no packets, nor status report */
         if ((nb_pkt == 0) && (send_report == false)) {
@@ -2071,10 +2077,10 @@ void thread_up(void) {
 
         /* start of JSON structure */
 
-        /* Make known who and when we are, define the start of the packet array. */
+        /* Make when we are, define the start of the packet array. */
         system_time = time(NULL);
         strftime(iso_timestamp, sizeof iso_timestamp, "%FT%TZ", gmtime(&system_time));
-        j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, "{\"time\":\"%s\",\"id\":\"%s\",\"rxpk\":[", iso_timestamp, gateway_id);
+          j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, "{\"time\":\"%s\",\"rxpk\":[", iso_timestamp);
         if (j > 0) {
             buff_index += j;
         } else {
@@ -2383,7 +2389,7 @@ void thread_up(void) {
         if (send_report == true) {
             pthread_mutex_lock(&mx_stat_rep);
             report_ready = false;
-            j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, "\"stat\":%s", status_report);
+                j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, "%s", &status_report[1])-1;
             pthread_mutex_unlock(&mx_stat_rep);
             if (j > 0) {
                 buff_index += j;
