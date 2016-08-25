@@ -95,7 +95,7 @@ static uint32_t time_on_air(struct lgw_pkt_tx_s *packet, bool isBeacon) {
     }
 
     /* Duration of 1 symbol */
-    Tsym = pow(2, SF) / BW;
+    Tsym = (double)(1 << SF) / BW;
 
     /* Duration of preamble */
     Tpreamble = (8 + 4.25) * Tsym; /* 8 programmed symbols in preamble */
