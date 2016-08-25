@@ -1542,12 +1542,12 @@ int main(void)
 				exit(EXIT_FAILURE);
 			}
 		}
-	}
 
     i = pthread_create( &thrid_jit, NULL, (void * (*)(void *))thread_jit, NULL);
     if (i != 0) {
         MSG("ERROR: [main] impossible to create JIT thread\n");
         exit(EXIT_FAILURE);
+	}
     }
 
     // Timer synchronization does not make much sense without and active GPS becasue it never gets initialized ...

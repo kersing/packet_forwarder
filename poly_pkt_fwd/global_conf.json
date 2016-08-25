@@ -229,7 +229,7 @@
         [ { "server_address": "127.0.0.1",
             "serv_port_up": 1680,
             "serv_port_down": 1681,
-            "serv_max_stall": 0,      
+            "serv_max_stall": 0,
             "serv_enabled": true },
           { "server_address": "iot.semtech.com",
             "serv_port_up": 1680,
@@ -263,7 +263,7 @@
         "system_calls": ["df -m","free -h","uptime","who -a","uname -a"],
         /* Performance updates (if empty, nothing is send/written) */
         "stat_format": "semtech",                 /* semtech or idee_verbose or idee_concise. */
-        "stat_damping": 50,                       /* 1: least damping up to 99: most damping. */
+        "stat_damping": 50,                       /* 1 for least damping up to 99 for most damping. */
         "stat_file": "stats.txt",                 /* Put or the whole path, or only a file name */
         /* For human communication */
         "platform": "*",                          /* Platform definition, put a asterix here for the system value, max 24 chars. */
