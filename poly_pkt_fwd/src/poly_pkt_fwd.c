@@ -1550,8 +1550,8 @@ int main(void)
 	}
     }
 
-    // Timer synchronization does not make much sense without and active GPS becasue it never gets initialized ...
-    if (gps_active == true) {
+    // Timer synchronization needed for downstream ...
+    if (gps_active == true || downstream_enabled == true) {
     	i = pthread_create( &thrid_timersync, NULL, (void * (*)(void *))thread_timersync, NULL);
     	if (i != 0) {
     		MSG("ERROR: [main] impossible to create Timer Sync thread\n");
