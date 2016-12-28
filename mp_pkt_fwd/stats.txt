@@ -1,0 +1,74 @@
+{
+    "servers": [
+        {
+            "name": "iot.semtech.com",
+            "found": true,
+            "last_seen": 480
+        }
+    ],
+    "time": "2016-12-15T00:02:38Z",
+    "device": {
+        "id": "C86000FFFEDDAE29",
+        "up_active": true,
+        "down_active": true,
+        "latitude": 53.189768,
+        "longitude": 6.557384,
+        "altitude": 5,
+        "uptime": 2916,
+        "gps": "fake",
+        "platform": "MultiTech-x86",
+        "email": "j.kersing@the-box.com",
+        "description": "MultiProcol forwarder development gateway"
+    },
+    "current": {
+        "up_radio_packets_received": 0,
+        "up_radio_packets_crc_good": 0,
+        "up_radio_packets_crc_bad": 0,
+        "up_radio_packets_crc_absent": 0,
+        "up_radio_packets_dropped": 0,
+        "up_radio_packets_forwarded": 0,
+        "up_server_datagrams_send": [
+            0
+        ],
+        "up_server_datagrams_acknowledged": [
+            0
+        ],
+        "down_heartbeat_send": [
+            3
+        ],
+        "down_heartbeat_received": [
+            3
+        ],
+        "down_server_datagrams_received": [
+            0
+        ],
+        "down_server_datagrams_accepted": [
+            0
+        ],
+        "down_radio_packets_succes": 0,
+        "down_radio_packets_failure": 0,
+        "down_radio_packets_collision_packet": 0,
+        "down_radio_packets_collision_beacon": 0,
+        "down_radio_packets_too_early": 0,
+        "down_radio_packets_too_late": 0,
+        "down_beacon_packets_queued": 0,
+        "down_beacon_packets_send": 0,
+        "down_beacon_packets_rejected": 0
+    },
+    "performance": {
+        "up_radio_packet_quality": 0.3982947267,
+        "up_server_datagram_quality": [
+            1
+        ],
+        "down_server_heartbeat_quality": [
+            1
+        ],
+        "down_server_datagram_quality": [
+            0
+        ],
+        "down_radio_packet_quality": [
+            1
+        ],
+        "down_beacon_packet_quality": 0
+    }
+}

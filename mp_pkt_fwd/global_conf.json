@@ -230,7 +230,7 @@
             "serv_port_up": 1700,
             "serv_port_down": 1700,
             "serv_max_stall": 0,
-            "serv_enabled": true },
+            "serv_enabled": false },
           { "server_address": "iot.semtech.com",
             "serv_port_up": 1680,
             "serv_port_down": 1680,

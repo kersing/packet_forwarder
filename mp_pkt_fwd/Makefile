@@ -1,6 +1,6 @@
 ### Application-specific constants
 
-APP_NAME := poly_pkt_fwd
+APP_NAME := mp_pkt_fwd
 
 ### Environment constants 
 
@@ -22,7 +22,8 @@ RELEASE_VERSION := $(shell cat ../VERSION)
 CC := $(CROSS_COMPILE)gcc
 AR := $(CROSS_COMPILE)ar
 
-CFLAGS := -O2 -Wall -Wextra -std=c99 -Iinc -I.
+CFLAGS := -O2 -Wall -Wextra -Iinc -I.
+#CFLAGS := -O2 -Wall -Wextra -std=c99 -Iinc -I.
 VFLAG := -D VERSION_STRING="\"$(RELEASE_VERSION)\""
 
 ### Constants for Lora concentrator HAL library
@@ -36,6 +37,7 @@ endif
 LGW_INC += $(LGW_PATH)/inc/loragw_hal.h
 LGW_INC += $(LGW_PATH)/inc/loragw_gps.h
 
+TTN_INC := -I../../ttn-gateway-connector/src -I../../ttn-gateway-connector/src/github.com/gogo/protobuf/protobuf -I../../ttn-gateway-connector/src/github.com/TheThingsNetwork -I/usr/local/include
 ### Linking options
 
 ifeq ($(CFG_SPI),native)
@@ -56,6 +58,7 @@ else
     $(error [error] Can't find configuration for SPI phy)
   endif
 endif
+LIBS += -lpaho-embed-mqtt3c $(shell pkg-config --libs 'libprotobuf-c >= 1.0.0') -L../../ttn-gateway-connector/bin -l ttn-gateway-connector
 
 ### General build targets
 
@@ -71,15 +74,15 @@ $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
 $(OBJDIR)/%.o: src/%.c $(INCLUDES) | $(OBJDIR)
-	$(CC) -c $(CFLAGS) -I$(LGW_PATH)/inc $< -o $@
+	$(CC) -c $(CFLAGS) -I$(LGW_PATH)/inc $(TTN_INC) $< -o $@
 
 ### Main program compilation and assembly
 
 $(OBJDIR)/$(APP_NAME).o: src/$(APP_NAME).c $(LGW_INC) $(INCLUDES) | $(OBJDIR)
-	$(CC) -c $(CFLAGS) $(VFLAG) -I$(LGW_PATH)/inc $< -o $@
+	$(CC) -c $(CFLAGS) $(VFLAG) -I$(LGW_PATH)/inc $(TTN_INC) $< -o $@
 
-$(APP_NAME): $(OBJDIR)/$(APP_NAME).o $(LGW_PATH)/libloragw.a $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o $(OBJDIR)/ghost.o $(OBJDIR)/endianext.o $(OBJDIR)/monitor.o 
-	$(CC) -L$(LGW_PATH) $< $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o $(OBJDIR)/ghost.o $(OBJDIR)/endianext.o $(OBJDIR)/monitor.o -o $@ $(LIBS)
+$(APP_NAME): $(OBJDIR)/$(APP_NAME).o $(LGW_PATH)/libloragw.a $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o $(OBJDIR)/ghost.o $(OBJDIR)/endianext.o $(OBJDIR)/monitor.o $(OBJDIR)/semtech_proto.o $(OBJDIR)/ttn_proto.o
+	$(CC) -L$(LGW_PATH) $< $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o $(OBJDIR)/ghost.o $(OBJDIR)/endianext.o $(OBJDIR)/monitor.o $(OBJDIR)/semtech_proto.o $(OBJDIR)/ttn_proto.o -o $@ $(LIBS)
 
 
 ### EOF
