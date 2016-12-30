@@ -37,7 +37,8 @@ endif
 LGW_INC += $(LGW_PATH)/inc/loragw_hal.h
 LGW_INC += $(LGW_PATH)/inc/loragw_gps.h
 
-TTN_INC := -I../../ttn-gateway-connector/src -I../../ttn-gateway-connector/src/github.com/gogo/protobuf/protobuf -I../../ttn-gateway-connector/src/github.com/TheThingsNetwork -I/usr/local/include
+#TTN_INC := -I../../ttn-gateway-connector/src -I../../ttn-gateway-connector/src/github.com/gogo/protobuf/protobuf -I../../ttn-gateway-connector/src/github.com/TheThingsNetwork -I/usr/local/include
+TTN_INC := -I../../ttn-gateway-connector/src -I../../ttn-gateway-connector/src/github.com/gogo/protobuf/protobuf -I../../ttn-gateway-connector/src/github.com/TheThingsNetwork -I../../protobuf-c
 ### Linking options
 
 ifeq ($(CFG_SPI),native)
@@ -58,7 +59,8 @@ else
     $(error [error] Can't find configuration for SPI phy)
   endif
 endif
-LIBS += -lpaho-embed-mqtt3c $(shell pkg-config --libs 'libprotobuf-c >= 1.0.0') -L../../ttn-gateway-connector/bin -l ttn-gateway-connector
+#LIBS += -L../../paho.mqtt.embedded-c/build/output -lpaho-embed-mqtt3c -L../../protobuf-c/bin -lprotobuf-c -L../../ttn-gateway-connector/bin -lttn-gateway-connector
+LIBS += -L../../paho.mqtt.embedded-c/build/output -lpaho-embed-mqtt3c -L../../ttn-gateway-connector/bin -lttn-gateway-connector -L../../protobuf-c/bin -lprotobuf-c
 
 ### General build targets
 
