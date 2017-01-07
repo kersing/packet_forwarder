@@ -52,6 +52,8 @@ Modifications for multi protocol use: Jac Kersing
 #include <netdb.h>          /* gai_strerror */
 
 #include <pthread.h>
+#include <getopt.h>
+#include <limits.h>
 
 #include "trace.h"
 #include "jitqueue.h"
@@ -65,8 +67,9 @@ Modifications for multi protocol use: Jac Kersing
 #include "mp_pkt_fwd.h"
 #include "ghost.h"
 #include "monitor.h"
-#include "semtech_proto.h"
-#include "ttn_proto.h"
+#include "semtech_transport.h"
+#include "ttn_transport.h"
+#include "stats.h"
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
@@ -178,11 +181,6 @@ bool gps_fake_enable; /* fake coordinates override real coordinates */
 
 /* measurements to establish statistics */
 pthread_mutex_t mx_meas_up = PTHREAD_MUTEX_INITIALIZER; /* control access to the upstream measurements */
-uint32_t meas_nb_rx_rcv = 0; /* count packets received */
-uint32_t meas_nb_rx_ok = 0; /* count packets received with PAYLOAD CRC OK */
-uint32_t meas_nb_rx_bad = 0; /* count packets received with PAYLOAD CRC ERROR */
-uint32_t meas_nb_rx_nocrc = 0; /* count packets received with NO PAYLOAD CRC */
-uint32_t meas_up_pkt_fwd = 0; /* number of radio packet forwarded to the server */
 uint32_t meas_up_network_byte = 0; /* sum of UDP bytes sent for upstream traffic */
 uint32_t meas_up_payload_byte = 0; /* sum of radio payload bytes sent for upstream traffic */
 uint32_t meas_up_dgram_sent[MAX_SERVERS] = {0}; /* number of datagrams sent for upstream traffic */
@@ -195,16 +193,6 @@ uint32_t meas_dw_dgram_rcv[MAX_SERVERS] = {0}; /* count PULL response datagrams 
 uint32_t meas_dw_dgram_acp[MAX_SERVERS] = {0}; /* response datagrams that are accepted for transmission */
 uint32_t meas_dw_network_byte = 0; /* sum of UDP bytes sent for upstream traffic */
 uint32_t meas_dw_payload_byte = 0; /* sum of radio payload bytes sent for upstream traffic */
-uint32_t meas_nb_tx_ok = 0; /* count packets emitted successfully */
-uint32_t meas_nb_tx_fail = 0; /* count packets were TX failed for other reasons */
-uint32_t meas_nb_tx_requested = 0; /* count TX request from server (downlinks) */
-uint32_t meas_nb_tx_rejected_collision_packet = 0; /* count packets were TX request were rejected due to collision with another packet already programmed */
-uint32_t meas_nb_tx_rejected_collision_beacon = 0; /* count packets were TX request were rejected due to collision with a beacon already programmed */
-uint32_t meas_nb_tx_rejected_too_late = 0; /* count packets were TX request were rejected because it is too late to program it */
-uint32_t meas_nb_tx_rejected_too_early = 0; /* count packets were TX request were rejected because timestamp is too much in advance */
-uint32_t meas_nb_beacon_queued = 0; /* count beacon inserted in jit queue */
-uint32_t meas_nb_beacon_sent = 0; /* count beacon actually sent to concentrator */
-uint32_t meas_nb_beacon_rejected = 0; /* count beacon rejected for queuing */
 
 
 pthread_mutex_t mx_meas_gps = PTHREAD_MUTEX_INITIALIZER; /* control access to the GPS statistics */
@@ -213,7 +201,7 @@ struct coord_s meas_gps_coord; /* GPS position of the gateway */
 struct coord_s meas_gps_err; /* GPS position of the gateway */
 
 pthread_mutex_t mx_stat_rep = PTHREAD_MUTEX_INITIALIZER; /* control access to the status report */
-static bool report_ready = false; /* true when there is a new report to send to the server */
+bool report_ready = false; /* true when there is a new report to send to the server */
 char status_report[STATUS_SIZE]; /* status report as a JSON object */
 
 /* beacon parameters */
@@ -228,9 +216,9 @@ static char ghost_addr[64] = "127.0.0.1"; /* address of the server (host name or
 static char ghost_port[8]  = "1914";      /* port to listen on */
 
 /* Variables to make the performance of forwarder locally available. */
-static char stat_format[32] = "semtech";        /* format for json statistics. */
-static char stat_file[1024] = "statistics.txt"; /* name / full path of file to store results in. */
-static int stat_damping = 50;        /* default damping for statistical values. */
+char stat_format[32] = "semtech";        /* format for json statistics. */
+char stat_file[1024] = "statistics.txt"; /* name / full path of file to store results in. */
+int stat_damping = 50;        /* default damping for statistical values. */
 
 /* Just In Time TX scheduling */
 struct jit_queue_s jit_queue;
@@ -254,14 +242,15 @@ uint32_t tx_freq_min[LGW_RF_CHAIN_NB]; /* lowest frequency supported by TX chain
 uint32_t tx_freq_max[LGW_RF_CHAIN_NB]; /* highest frequency supported by TX chain */
 
 /* Control over the separate streams. Per default, the system behaves like a basic packet forwarder. */
-static bool upstream_enabled     = true;    /* controls the data flow from end-node to server         */
-static bool downstream_enabled   = true;    /* controls the data flow from server to end-node         */
+bool ttn_enabled          = false;   /* controls dataflow to The Things Network                */
+bool upstream_enabled     = true;    /* controls the data flow from end-node to server         */
+bool downstream_enabled   = true;    /* controls the data flow from server to end-node         */
+bool statusstream_enabled = true;    /* controls the data flow of status information to server */
 static bool ghoststream_enabled  = false;   /* controls the data flow from ghost-node to server       */
 static bool radiostream_enabled  = true;    /* controls the data flow from radio-node to server       */
-static bool statusstream_enabled = true;    /* controls the data flow of status information to server */
 
 /* Informal status fields */
-static char gateway_id[20]  = "";                /* string form of gateway mac address */
+char gateway_id[20]  = "";                /* string form of gateway mac address */
 char platform[24]    = DISPLAY_PLATFORM;  /* platform definition */
 char email[40]       = "";                /* used for contact email */
 char description[64] = "";                /* used for free form description */
@@ -1077,28 +1066,34 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Platform configured to \"%s\"\n", platform);
 	}
 
-	/* Read of contact email */
+	/* Read value of contact email */
 	str = json_object_get_string(conf_obj, "contact_email");
 	if (str != NULL) {
 		snprintf(email, sizeof email,"%s",str);
 		MSG("INFO: Contact email configured to \"%s\"\n", email);
 	}
 
-	/* Read of description */
+	/* Read value of description */
 	str = json_object_get_string(conf_obj, "description");
 	if (str != NULL) {
 		snprintf(description, sizeof description,"%s",str);
 		MSG("INFO: Description configured to \"%s\"\n", description);
 	}
 
-	/* Read of ttn_gateway_id */
+	/* Read value of ttn_enabled data */
+	val = json_object_get_value(conf_obj, "ttn_enable");
+	if (json_value_get_type(val) == JSONBoolean) {
+		ttn_enabled = (bool)json_value_get_boolean(val);
+	}
+
+	/* Read value of ttn_gateway_id */
 	str = json_object_get_string(conf_obj, "ttn_gateway_id");
 	if (str != NULL) {
 		snprintf(ttn_gateway_id, sizeof ttn_gateway_id,"%s",str);
 		MSG("INFO: TTN gateway ID configured to \"%s\"\n", ttn_gateway_id);
 	}
 
-	/* Read of ttn_gateway_key */
+	/* Read value of ttn_gateway_key */
 	str = json_object_get_string(conf_obj, "ttn_gateway_key");
 	if (str != NULL) {
 		snprintf(ttn_gateway_key, sizeof ttn_gateway_key,"%s",str);
@@ -1141,101 +1136,89 @@ double difftimespec(struct timespec end, struct timespec beginning) {
     return x;
 }
 
-/* Function to safely calculate the moving averages */
-static double moveave(double old, uint32_t utel, uint32_t unoe) {
-	double dtel = utel;
-	double dnoe = unoe;
-	if      ( unoe == 0 )   { return old; }
-	else if ( old  < 1e-3 ) { return dtel / dnoe; }
-	else                    { return (old*stat_damping + (dtel/dnoe)*(100-stat_damping))/100; }
+void usage(char *proc_name) {
+	fprintf(stderr, "Usage: %s [-c config_dir] [-l logfile]\n", proc_name);
+	exit(1);
 }
+
+static char *short_options = "c:l:h";
+static struct option long_options[] = {
+        {"config-dir", 1, 0, 'c'},
+        {"logfile", 1, 0, 'l'},
+        {"help", 0, 0, 'h'},
+        {0, 0, 0, 0},
+};
 
 /* -------------------------------------------------------------------------- */
 /* --- MAIN FUNCTION -------------------------------------------------------- */
 
-int main(void)
+int main(int argc, char *argv[])
 {
     struct sigaction sigact; /* SIGQUIT&SIGINT&SIGTERM signal handling */
     int i; /* loop variable and temporary variable for return value */
     int ic; /* Server loop variable */
 
     /* configuration file related */
-    char *global_cfg_path= "global_conf.json"; /* contain global (typ. network-wide) configuration */
-    char *local_cfg_path = "local_conf.json"; /* contain node specific configuration, overwrite global parameters for parameters that are defined in both */
-    char *debug_cfg_path = "debug_conf.json"; /* if present, all other configuration files are ignored */
+    char *global_cfg_name= "global_conf.json"; /* contain global (typ. network-wide) configuration */
+    char *local_cfg_name = "local_conf.json"; /* contain node specific configuration, overwrite global parameters for parameters that are defined in both */
+    char *debug_cfg_name = "debug_conf.json"; /* if present, all other configuration files are ignored */
+
+    int opt_ind = 0;
+
+    char cfg_dir[PATH_MAX] = {0};
+    char global_cfg_path[PATH_MAX] = {0};
+    char local_cfg_path[PATH_MAX] = {0};
+    char debug_cfg_path[PATH_MAX] = {0};
+    char *logfile_path = NULL;
+    char *proc_name = argv[0];
 
     /* threads */
     pthread_t thrid_up;
-	pthread_t thrid_down[MAX_SERVERS];
+    pthread_t thrid_down[MAX_SERVERS];
     pthread_t thrid_gps;
     pthread_t thrid_valid;
     pthread_t thrid_jit;
     pthread_t thrid_timersync;
 
-    /* variables to get local copies of measurements */
-    uint32_t cp_nb_rx_rcv = 0;
-    uint32_t cp_nb_rx_ok = 0;
-    uint32_t cp_nb_rx_bad = 0;
-    uint32_t cp_nb_rx_drop = 0;
-    uint32_t cp_nb_rx_nocrc = 0;
-    uint32_t cp_up_pkt_fwd = 0;
-    uint32_t cp_up_network_byte = 0;
-    uint32_t cp_up_payload_byte = 0;
-    uint32_t cp_up_dgram_sent = 0;
-    uint32_t cp_up_ack_rcv = 0;
-    uint32_t cp_dw_pull_sent = 0;
-    uint32_t cp_dw_ack_rcv = 0;
-    uint32_t cp_dw_dgram_rcv = 0;
-    uint32_t cp_dw_dgram_acp = 0;
-    uint32_t cp_dw_network_byte = 0;
-    uint32_t cp_dw_payload_byte = 0;
-    uint32_t cp_nb_tx_ok = 0;
-    uint32_t cp_nb_tx_fail = 0;
-    uint32_t cp_nb_tx_requested = 0;
-    uint32_t cp_nb_tx_rejected_collision_packet = 0;
-    uint32_t cp_nb_tx_rejected_collision_beacon = 0;
-    uint32_t cp_nb_tx_rejected_too_late = 0;
-    uint32_t cp_nb_tx_rejected_too_early = 0;
-    uint32_t cp_nb_beacon_queued = 0;
-    uint32_t cp_nb_beacon_sent = 0;
-    uint32_t cp_nb_beacon_rejected = 0;
-
-    /* array to collect data per server */
-    int ar_up_dgram_sent[MAX_SERVERS] = {0};
-    int ar_up_ack_rcv[MAX_SERVERS]    = {0};
-    int ar_dw_pull_sent[MAX_SERVERS]  = {0};
-    int ar_dw_ack_rcv[MAX_SERVERS]    = {0};
-    int ar_dw_dgram_rcv[MAX_SERVERS]  = {0};
-    int ar_dw_dgram_acp[MAX_SERVERS]  = {0};
+    /* fields to store the moment of activation. */
+    time_t current_time = time(NULL);
     int stall_time[MAX_SERVERS]       = {0};
 
-    /* moving averages for overall statistics */
-    double move_up_rx_quality                     =  0;   /* ratio of received crc_good packets over total received packets */
-    double move_up_ack_quality[MAX_SERVERS]       = {0};  /* ratio of datagram sent to datagram acknowledged to server */
-    double move_dw_ack_quality[MAX_SERVERS]       = {0};  /* ratio of pull request to pull response to server */
-    double move_dw_datagram_quality[MAX_SERVERS]  = {0};  /* ratio of json correct datagrams to total datagrams received*/
-    double move_dw_receive_quality[MAX_SERVERS]   = {0};  /* ratio of succesfully aired data packets to total received datapackets */
-    double move_dw_beacon_quality                 =  0;   /* ratio of succesfully sent to queued for the beacon */
+    while((i = getopt_long(argc, argv, short_options, long_options, &opt_ind)) >= 0) {
+        switch(i) {
+	  case 0:
+	       break;
+	  case 'c':
+	       strncpy(cfg_dir, optarg, sizeof(cfg_dir)-2);
+	       strcat(cfg_dir, "/");
+	       break;
+	  case 'l':
+	       logfile_path = optarg;
+	       break;
+	  default:
+	       usage(proc_name);
+	       break;
+	}
+    }
 
-    /* GPS coordinates and variables */
-    bool coord_ok = false;
-    struct coord_s cp_gps_coord = {0.0, 0.0, 0};
-    char gps_state[16] = "unknown";
-    //struct coord_s cp_gps_err;
+    snprintf(global_cfg_path, sizeof(global_cfg_path),  "%s%s", cfg_dir, global_cfg_name);
+    snprintf(local_cfg_path, sizeof(local_cfg_path),  "%s%s", cfg_dir, local_cfg_name);
+    snprintf(debug_cfg_path, sizeof(debug_cfg_path),  "%s%s", cfg_dir, debug_cfg_name);
 
-    /* statistics variable */
-    char * stat_file_tmp = ".temp_statistics_polypacketforwarder";
-    char stat_timestamp[24];
-    char iso_timestamp[24];
-    float rx_ok_ratio;
-    float rx_bad_ratio;
-    float rx_nocrc_ratio;
-    float up_ack_ratio;
-    float dw_ack_ratio;
-
-    /* fields to store the moment of activation. */
-    time_t startup_time = time(NULL);
-    time_t current_time = startup_time;
+    /* redirect stdout, stderr to logfile if specified */
+    int logfile_fd;
+    FILE *logfile = NULL;
+    if (logfile_path) {
+        logfile = fopen(logfile_path, "w");
+	if (logfile) {
+	    logfile_fd = fileno(logfile);
+	    dup2(logfile_fd, STDOUT_FILENO);
+	    dup2(logfile_fd, STDERR_FILENO);
+	} else {
+	    printf("Error opening log file %s\n", logfile_path);
+	    exit(1);
+	}
+    }
 
     /* display version informations */
     MSG("*** Multi Protocol Packet Forwarder for Lora Gateway ***\nVersion: " VERSION_STRING "\n");
@@ -1297,8 +1280,14 @@ int main(void)
     /* get timezone info */
     tzset();
 
+    /* clear statistics */
+    stats_init();
+
     /* initialize semtech protocol stack */
-    ttn_init();
+    if (ttn_enabled && ttn_init() != 0) {
+	MSG("ERROR: [main] Failed to connect to TTN\n");
+	exit(EXIT_FAILURE);
+    }
     sem_init();
 
     /* sanity check on configuration variables */
@@ -1328,7 +1317,7 @@ int main(void)
 
 	
     /* spawn threads to manage upstream and downstream */
-	if (upstream_enabled == true) {
+	if (upstream_enabled == true || ttn_enabled == true) {
     i = pthread_create( &thrid_up, NULL, (void * (*)(void *))thread_up, NULL);
     if (i != 0) {
         MSG("ERROR: [main] impossible to create upstream thread\n");
@@ -1355,7 +1344,7 @@ int main(void)
     }
 
     // Timer synchronization needed for downstream ...
-    if (gps_active == true || downstream_enabled == true) {
+    if (gps_active == true || downstream_enabled == true || ttn_enabled == true) {
     	i = pthread_create( &thrid_timersync, NULL, (void * (*)(void *))thread_timersync, NULL);
     	if (i != 0) {
     		MSG("ERROR: [main] impossible to create Timer Sync thread\n");
@@ -1402,326 +1391,21 @@ int main(void)
     	MSG("WARNING: [main] All streams have been disabled, gateway may be completely silent.\n");
     }
 
-    /* main loop task : statistics collection */
+    /* main loop task : statistics transmission */
     while (!exit_sig && !quit_sig) {
         /* wait for next reporting interval */
         wait_ms(1000 * stat_interval);
 
-        /* access upstream statistics, copy and reset them */
-        pthread_mutex_lock(&mx_meas_up);
-        cp_nb_rx_rcv       = meas_nb_rx_rcv;
-        cp_nb_rx_ok        = meas_nb_rx_ok;
-        cp_nb_rx_bad       = meas_nb_rx_bad;
-        cp_nb_rx_nocrc     = meas_nb_rx_nocrc;
-        cp_up_pkt_fwd      = meas_up_pkt_fwd;
-        cp_up_network_byte = meas_up_network_byte;
-        cp_up_payload_byte = meas_up_payload_byte;
-        cp_nb_rx_drop      = cp_nb_rx_rcv - cp_nb_rx_ok - cp_nb_rx_bad - cp_nb_rx_nocrc;
-        for (i=cp_up_dgram_sent=0; i<serv_count; i++) { cp_up_dgram_sent += ar_up_dgram_sent[i] = meas_up_dgram_sent[i]; }
-        for (i=cp_up_ack_rcv=0;    i<serv_count; i++) { cp_up_ack_rcv    += ar_up_ack_rcv[i]    = meas_up_ack_rcv[i];    }
-        meas_nb_rx_rcv = 0;
-        meas_nb_rx_ok = 0;
-        meas_nb_rx_bad = 0;
-        meas_nb_rx_nocrc = 0;
-        meas_up_pkt_fwd = 0;
-        meas_up_network_byte = 0;
-        meas_up_payload_byte = 0;
-        memset(meas_up_dgram_sent, 0, sizeof meas_up_dgram_sent);
-        memset(meas_up_ack_rcv, 0, sizeof meas_up_ack_rcv);
-        /* get timestamp for statistics (must be done inside the lock) */
-        current_time = time(NULL);
-        for (i=0; i<serv_count; i++) { stall_time[i] = (int) (current_time - serv_contact[i]); }
-        pthread_mutex_unlock(&mx_meas_up);
-
-        /* Do the math */
-        strftime(stat_timestamp, sizeof stat_timestamp, "%F %T %Z", gmtime(&current_time));
-        strftime(iso_timestamp, sizeof stat_timestamp, "%FT%TZ", gmtime(&current_time));
-
-        if (cp_nb_rx_rcv > 0) {
-            rx_ok_ratio = (float)cp_nb_rx_ok / (float)cp_nb_rx_rcv;
-            rx_bad_ratio = (float)cp_nb_rx_bad / (float)cp_nb_rx_rcv;
-            rx_nocrc_ratio = (float)cp_nb_rx_nocrc / (float)cp_nb_rx_rcv;
-        } else {
-            rx_ok_ratio = 0.0;
-            rx_bad_ratio = 0.0;
-            rx_nocrc_ratio = 0.0;
-        }
-        if (cp_up_dgram_sent > 0) {
-            up_ack_ratio = (float)cp_up_ack_rcv / (float)cp_up_dgram_sent;
-        } else {
-            up_ack_ratio = 0.0;
-        }
-
-        /* access downstream statistics, copy and reset them */
-        pthread_mutex_lock(&mx_meas_dw);
-        for (i=cp_dw_pull_sent=0; i<serv_count; i++) { cp_dw_pull_sent += ar_dw_pull_sent[i] = meas_dw_pull_sent[i]; }
-        for (i=cp_dw_ack_rcv=0;   i<serv_count; i++) { cp_dw_ack_rcv   += ar_dw_ack_rcv[i]   = meas_dw_ack_rcv[i];   }
-        for (i=cp_dw_dgram_rcv=0; i<serv_count; i++) { cp_dw_dgram_rcv += ar_dw_dgram_rcv[i] = meas_dw_dgram_rcv[i]; }
-        for (i=cp_dw_dgram_acp=0; i<serv_count; i++) { cp_dw_dgram_acp += ar_dw_dgram_acp[i] = meas_dw_dgram_acp[i]; }
-        cp_dw_network_byte =  meas_dw_network_byte;
-        cp_dw_payload_byte =  meas_dw_payload_byte;
-        cp_nb_tx_ok        =  meas_nb_tx_ok;
-        cp_nb_tx_fail      =  meas_nb_tx_fail;
-        //TODO: Why were here all '+=' instead of '='?? The summed values grow unbounded and eventually overflow!
-        cp_nb_tx_requested                 =  meas_nb_tx_requested;                   // was +=
-        cp_nb_tx_rejected_collision_packet =  meas_nb_tx_rejected_collision_packet;   // was +=
-        cp_nb_tx_rejected_collision_beacon =  meas_nb_tx_rejected_collision_beacon;   // was +=
-        cp_nb_tx_rejected_too_late         =  meas_nb_tx_rejected_too_late;           // was +=
-        cp_nb_tx_rejected_too_early        =  meas_nb_tx_rejected_too_early;          // was +=
-        cp_nb_beacon_queued   =  meas_nb_beacon_queued;    // was +=
-        cp_nb_beacon_sent     =  meas_nb_beacon_sent;      // was +=
-        cp_nb_beacon_rejected =  meas_nb_beacon_rejected;  // was +=
-        memset(meas_dw_pull_sent, 0, sizeof meas_dw_pull_sent);
-        memset(meas_dw_ack_rcv, 0, sizeof meas_dw_ack_rcv);
-        memset(meas_dw_dgram_rcv, 0, sizeof meas_dw_dgram_rcv);
-        memset(meas_dw_dgram_acp, 0, sizeof meas_dw_dgram_acp);
-        meas_dw_network_byte = 0;
-        meas_dw_payload_byte = 0;
-        meas_nb_tx_ok = 0;
-        meas_nb_tx_fail = 0;
-        meas_nb_tx_requested = 0;
-        meas_nb_tx_rejected_collision_packet = 0;
-        meas_nb_tx_rejected_collision_beacon = 0;
-        meas_nb_tx_rejected_too_late = 0;
-        meas_nb_tx_rejected_too_early = 0;
-        meas_nb_beacon_queued = 0;
-        meas_nb_beacon_sent = 0;
-        meas_nb_beacon_rejected = 0;
-        pthread_mutex_unlock(&mx_meas_dw);
-        if (cp_dw_pull_sent > 0) {
-            dw_ack_ratio = (float)cp_dw_ack_rcv / (float)cp_dw_pull_sent;
-        } else {
-            dw_ack_ratio = 0.0;
-        }
-
-        /* access GPS statistics, copy them */
-		if (gps_active == true) {
-            pthread_mutex_lock(&mx_meas_gps);
-            coord_ok = gps_coord_valid;
-            cp_gps_coord  =  meas_gps_coord;
-            //cp_gps_err    =  meas_gps_err;
-            pthread_mutex_unlock(&mx_meas_gps);
-        }
-
-        /* overwrite with reference coordinates if function is enabled */
-        if (gps_fake_enable == true) {
-			//gps_enabled = true;
-            coord_ok = true;
-            cp_gps_coord = reference_coord;
-        }
-
-        /* Determine the GPS state in human understandable form */
-        { if      (gps_enabled == false)      snprintf(gps_state, sizeof gps_state, "disabled");
-          else if (gps_fake_enable == true)   snprintf(gps_state, sizeof gps_state, "fake");
-          else if (gps_active == false)       snprintf(gps_state, sizeof gps_state, "inactive");
-          else if (gps_ref_valid == false)    snprintf(gps_state, sizeof gps_state, "searching");
-          else                                snprintf(gps_state, sizeof gps_state, "locked"); }
-
-        /* calculate the moving averages */
-        move_up_rx_quality =  moveave(move_up_rx_quality,cp_nb_rx_ok,cp_nb_rx_rcv);
-		for (i=0; i<serv_count; i++) { move_up_ack_quality[i]      = moveave(move_up_ack_quality[i],ar_up_ack_rcv[i],ar_up_dgram_sent[i]); }
-		for (i=0; i<serv_count; i++) { move_dw_ack_quality[i]      = moveave(move_dw_ack_quality[i],ar_dw_ack_rcv[i],ar_dw_pull_sent[i]); }
-		for (i=0; i<serv_count; i++) { move_dw_datagram_quality[i] = moveave(move_dw_datagram_quality[i],ar_dw_dgram_acp[i],ar_dw_dgram_rcv[i]); }
-		for (i=0; i<serv_count; i++) { move_dw_receive_quality[i]  = moveave(move_dw_receive_quality[i],ar_dw_ack_rcv[i],ar_dw_pull_sent[i]); }
-		move_dw_beacon_quality =  moveave(move_dw_beacon_quality,cp_nb_beacon_sent,cp_nb_beacon_queued);
-
-        /* display a report */
-        printf("\n##### %s #####\n", stat_timestamp);
-        if (upstream_enabled == true) {
-        	printf("### [UPSTREAM] ###\n");
-        	printf("# RF packets received by concentrator: %u\n", cp_nb_rx_rcv);
-        	printf("# CRC_OK: %.2f%%, CRC_FAIL: %.2f%%, NO_CRC: %.2f%%\n", 100.0 * rx_ok_ratio, 100.0 * rx_bad_ratio, 100.0 * rx_nocrc_ratio);
-        	printf("# RF packets forwarded: %u (%u bytes)\n", cp_up_pkt_fwd, cp_up_payload_byte);
-        	printf("# PUSH_DATA datagrams sent: %u (%u bytes)\n", cp_up_dgram_sent, cp_up_network_byte);
-        	printf("# PUSH_DATA acknowledged: %.2f%%\n", 100.0 * up_ack_ratio);
-        } else {
-        	printf("### UPSTREAM IS DISABLED! \n");
-        }
-        if (downstream_enabled == true) {
-        	printf("### [DOWNSTREAM] ###\n");
-        	printf("# PULL_DATA sent: %u (%.2f%% acknowledged)\n", cp_dw_pull_sent, 100.0 * dw_ack_ratio);
-        	printf("# PULL_RESP(onse) datagrams received: %u (%u bytes)\n", cp_dw_dgram_rcv, cp_dw_network_byte);
-        	printf("# RF packets sent to concentrator: %u (%u bytes)\n", (cp_nb_tx_ok+cp_nb_tx_fail), cp_dw_payload_byte);
-        	printf("# TX errors: %u\n", cp_nb_tx_fail);
-        	if (cp_nb_tx_requested != 0 ) {
-        		printf("# TX rejected (collision packet): %.2f%% (req:%u, rej:%u)\n", 100.0 * cp_nb_tx_rejected_collision_packet / cp_nb_tx_requested, cp_nb_tx_requested, cp_nb_tx_rejected_collision_packet);
-        		printf("# TX rejected (collision beacon): %.2f%% (req:%u, rej:%u)\n", 100.0 * cp_nb_tx_rejected_collision_beacon / cp_nb_tx_requested, cp_nb_tx_requested, cp_nb_tx_rejected_collision_beacon);
-        		printf("# TX rejected (too late): %.2f%% (req:%u, rej:%u)\n", 100.0 * cp_nb_tx_rejected_too_late / cp_nb_tx_requested, cp_nb_tx_requested, cp_nb_tx_rejected_too_late);
-        		printf("# TX rejected (too early): %.2f%% (req:%u, rej:%u)\n", 100.0 * cp_nb_tx_rejected_too_early / cp_nb_tx_requested, cp_nb_tx_requested, cp_nb_tx_rejected_too_early);
-        	}
-        } else {
-        	printf("### DOWNSTREAM IS DISABLED! \n");
-        }
-        if (beacon_enabled == true) {
-        	printf("### [BEACON] ###\n");
-        	printf("# Packets queued: %u\n", cp_nb_beacon_queued);
-        	printf("# Packets sent so far: %u\n", cp_nb_beacon_sent);
-        	printf("# Packets rejected: %u\n", cp_nb_beacon_rejected);
-        } else {
-        	printf("### BEACON IS DISABLED! \n");
-        }
-     	printf("### [JIT] ###\n");
-        jit_report_queue (&jit_queue);
-		//TODO: this is not symmetrical. time can also be derived from other sources, fix
-        if (gps_enabled == true) {
-            printf("### [GPS] ###\n");
-            /* no need for mutex, display is not critical */
-            if (gps_fake_enable == true) {
-				printf("# No time keeping possible due to fake gps.\n");
-            } else if (gps_ref_valid == true) {
-				printf("# Valid gps time reference (age: %li sec)\n", (long)difftime(time(NULL), time_reference_gps.systime));
-            } else {
-				printf("# Invalid gps time reference (age: %li sec)\n", (long)difftime(time(NULL), time_reference_gps.systime));
-            }
-            if (gps_fake_enable == true) {
-				printf("# Manual GPS coordinates: latitude %.5f, longitude %.5f, altitude %i m\n", cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt);
-            } else if (coord_ok == true) {
-				printf("# System GPS coordinates: latitude %.5f, longitude %.5f, altitude %i m\n", cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt);
-            } else {
-                printf("# no valid GPS coordinates available yet\n");
-            }
-        } else {
-            printf("### GPS IS DISABLED! \n");
-        }
-
-     	printf("### [PERFORMANCE] ###\n");
-     	if (upstream_enabled == true) {
-     		printf("# Upstream radio packet quality: %.2f%%.\n",100*move_up_rx_quality);
-     		for (i=0; i<serv_count; i++) { printf("# Upstream datagram acknowledgment quality for server \"%s\" is %.2f%%.\n",serv_addr[i],100*move_up_ack_quality[i]); }
-     	}
-     	if (downstream_enabled == true) {
-     		for (i=0; i<serv_count; i++) { printf("# Downstream heart beat acknowledgment quality for server \"%s\" is %.2f%%.\n",serv_addr[i],100*move_dw_ack_quality[i]); }
-     		for (i=0; i<serv_count; i++) { printf("# Downstream datagram content quality for server \"%s\" is %.2f%%.\n",serv_addr[i],100*move_dw_datagram_quality[i]); }
-     		for (i=0; i<serv_count; i++) { printf("# Downstream radio transmission quality for server \"%s\" is %.2f%%.\n",serv_addr[i],100*move_dw_receive_quality[i]); }
-     	}
-     	if (beacon_enabled == true) {
-     		printf("# Downstream beacon transmission quality: %.2f%%.\n",100*move_dw_beacon_quality);
-     	}
-
-
-        /* generate a JSON report (will be sent to server by upstream thread) */
-
-     	/* Check which format to use */
-     	bool semtech_format       =  strcmp(stat_format,"semtech") == 0;
-     	bool lorank_idee_verbose  =  strcmp(stat_format,"idee_verbose")  == 0;
-     	bool lorank_idee_concise  =  strcmp(stat_format,"idee_concise")  == 0;
-     	bool has_stat_file        =  stat_file[0] != 0;
-        JSON_Value *root_value_verbose    = NULL;
-        JSON_Object *root_object_verbose  = NULL;
-        JSON_Value *root_value_concise    = NULL;
-        JSON_Object *root_object_concise  = NULL;
-		if (statusstream_enabled == true || has_stat_file == true) {
-	        root_value_verbose  = json_value_init_object();
-	        root_object_verbose = json_value_get_object(root_value_verbose);
-	    	JSON_Value *servers_array_value  = json_value_init_array();
-	        JSON_Array *servers_array_object = json_value_get_array(servers_array_value);
-	    	for (ic = 0; ic < serv_count; ic++)
-	    	{ JSON_Value *sub_value = json_value_init_object();
-	    	  JSON_Object *sub_object = json_value_get_object(sub_value);
-	    	  json_object_set_string(sub_object, "name", serv_addr[ic]);
-	    	  json_object_set_boolean(sub_object, "found", serv_live[ic] == true);
-	    	  if (serv_live[ic] == true) json_object_set_number(sub_object, "last_seen", stall_time[ic]); else json_object_set_string(sub_object, "last_seen", "never");
-	    	  json_array_append_value(servers_array_object,sub_value); }
-	    	json_object_set_value(           root_object_verbose, "servers",                                      servers_array_value);
-            json_object_set_string(          root_object_verbose, "time",                                         iso_timestamp);
-            json_object_dotset_string(       root_object_verbose, "device.id",                                    gateway_id);
-            json_object_dotset_boolean(      root_object_verbose, "device.up_active",                             upstream_enabled == true);
-            json_object_dotset_boolean(      root_object_verbose, "device.down_active",                           downstream_enabled == true);
-            json_object_dotset_number(       root_object_verbose, "device.latitude",                              cp_gps_coord.lat);
-            json_object_dotset_number(       root_object_verbose, "device.longitude",                             cp_gps_coord.lon);
-            json_object_dotset_number(       root_object_verbose, "device.altitude",                              cp_gps_coord.alt);
-            json_object_dotset_number(       root_object_verbose, "device.uptime",                                current_time - startup_time);
-            json_object_dotset_string(       root_object_verbose, "device.gps",                                   gps_state);
-            json_object_dotset_string(       root_object_verbose, "device.platform",                              platform);
-            json_object_dotset_string(       root_object_verbose, "device.email",                                 email);
-            json_object_dotset_string(       root_object_verbose, "device.description",                           description);
-            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_received",            cp_nb_rx_rcv);
-            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_crc_good",            cp_nb_rx_ok);
-            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_crc_bad",             cp_nb_rx_bad);
-            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_crc_absent",          cp_nb_rx_nocrc);
-            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_dropped",             cp_nb_rx_drop);
-            json_object_dotset_number(       root_object_verbose, "current.up_radio_packets_forwarded",           cp_up_pkt_fwd);
-            json_object_dotset_int_array(    root_object_verbose, "current.up_server_datagrams_send",             ar_up_dgram_sent,serv_count);
-            json_object_dotset_int_array(    root_object_verbose, "current.up_server_datagrams_acknowledged",     ar_up_ack_rcv,serv_count);
-            json_object_dotset_int_array(    root_object_verbose, "current.down_heartbeat_send",                  ar_dw_pull_sent,serv_count);
-            json_object_dotset_int_array(    root_object_verbose, "current.down_heartbeat_received",              ar_dw_ack_rcv,serv_count);
-            json_object_dotset_int_array(    root_object_verbose, "current.down_server_datagrams_received",       ar_dw_dgram_rcv,serv_count);
-            json_object_dotset_int_array(    root_object_verbose, "current.down_server_datagrams_accepted",       ar_dw_dgram_acp,serv_count);
-            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_succes",            cp_nb_tx_ok);
-            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_failure",           cp_nb_tx_fail);
-            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_collision_packet",  cp_nb_tx_rejected_collision_packet);
-            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_collision_beacon",  cp_nb_tx_rejected_collision_beacon);
-            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_too_early",         cp_nb_tx_rejected_too_early);
-            json_object_dotset_number(       root_object_verbose, "current.down_radio_packets_too_late",          cp_nb_tx_rejected_too_late);
-            json_object_dotset_number(       root_object_verbose, "current.down_beacon_packets_queued",           cp_nb_beacon_queued);
-            json_object_dotset_number(       root_object_verbose, "current.down_beacon_packets_send",             cp_nb_beacon_sent);
-            json_object_dotset_number(       root_object_verbose, "current.down_beacon_packets_rejected",         cp_nb_beacon_rejected);
-            json_object_dotset_number(       root_object_verbose, "performance.up_radio_packet_quality",          move_up_rx_quality);
-            json_object_dotset_double_array( root_object_verbose, "performance.up_server_datagram_quality",       move_up_ack_quality,serv_count);
-            json_object_dotset_double_array( root_object_verbose, "performance.down_server_heartbeat_quality",    move_dw_ack_quality,serv_count);
-            json_object_dotset_double_array( root_object_verbose, "performance.down_server_datagram_quality",     move_dw_datagram_quality,serv_count);
-            json_object_dotset_double_array( root_object_verbose, "performance.down_radio_packet_quality",        move_dw_receive_quality,serv_count);
-            json_object_dotset_number(       root_object_verbose, "performance.down_beacon_packet_quality",       move_dw_beacon_quality);
-	        }
-		if (statusstream_enabled == true && lorank_idee_concise) {
-		    root_value_concise  = json_value_init_object();
-	        root_object_concise = json_value_get_object(root_value_concise);
-            json_object_dotset_string(       root_object_concise, "dev.id",         gateway_id);
-            json_object_dotset_number(       root_object_concise, "dev.lat",        cp_gps_coord.lat);
-            json_object_dotset_number(       root_object_concise, "dev.lon",        cp_gps_coord.lon);
-            json_object_dotset_number(       root_object_concise, "dev.alt",        cp_gps_coord.alt);
-            json_object_dotset_number(       root_object_concise, "dev.up",         current_time - startup_time);
-            json_object_dotset_string(       root_object_concise, "dev.gps",        gps_state);
-            json_object_dotset_string(       root_object_concise, "dev.pfrm",       platform);
-            json_object_dotset_string(       root_object_concise, "dev.email",      email);
-            json_object_dotset_string(       root_object_concise, "dev.desc",       description);
-            if (upstream_enabled == true) {
-              json_object_dotset_number(       root_object_concise, "prf.up_rf",      move_up_rx_quality);
-              json_object_dotset_double_array( root_object_concise, "prf.up_srv_dg",  move_up_ack_quality,serv_count);
-            }
-            if (downstream_enabled == true) {
-              json_object_dotset_double_array( root_object_concise, "prf.dw_srv_hb",  move_dw_ack_quality,serv_count);
-              json_object_dotset_double_array( root_object_concise, "prf.dw_srv_dg",  move_dw_datagram_quality,serv_count);
-              json_object_dotset_double_array( root_object_concise, "prf.dw_rf",      move_dw_receive_quality,serv_count);
-              json_object_dotset_number(       root_object_concise, "prf.dw_bcn",     move_dw_beacon_quality);
-            }
-	    }
-        if (has_stat_file == true) {
-        	if (json_serialize_to_file_pretty(root_value_verbose,stat_file_tmp) == JSONSuccess)
-        		rename(stat_file_tmp,stat_file);
-        }
-        if (statusstream_enabled == true) {
-			pthread_mutex_lock(&mx_stat_rep);
-			if (semtech_format == true) {
-				if ((gps_enabled == true) && (coord_ok == true)) {
-					snprintf(status_report, STATUS_SIZE, "{\"stat\":{\"time\":\"%s\",\"lati\":%.5f,\"long\":%.5f,\"alti\":%i,\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}}", stat_timestamp, cp_gps_coord.lat, cp_gps_coord.lon, cp_gps_coord.alt, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
-				} else {
-					snprintf(status_report, STATUS_SIZE, "{\"stat\":{\"time\":\"%s\",\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}}", stat_timestamp, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
-				}
-				printf("# Semtech status report send. \n");
-			} else if (lorank_idee_verbose == true) {
-				/* The time field is already permanently included in the packet stream, note that may be a little later. */
-				json_object_remove(root_object_verbose,"time");
-				json_serialize_to_buffer(root_value_verbose,status_report,STATUS_SIZE);
-				printf("# Ideetron verbose status report send. \n");
-			} else if (lorank_idee_concise == true) {
-				json_serialize_to_buffer(root_value_concise,status_report,STATUS_SIZE);
-				printf("# Ideetron concise status report send. \n");
-			} else 	{
-				printf("# NO status report send (format unknown!) \n");
-			}
-			report_ready = true;
-			pthread_mutex_unlock(&mx_stat_rep);
-		}
-		if (statusstream_enabled == true || has_stat_file == true)  json_value_free(root_value_verbose);
-		if (statusstream_enabled == true && lorank_idee_concise)    json_value_free(root_value_concise);
-	    printf("##### END #####\n");
-
-	    // Send status using TTN protocol
-            ttn_status_up(cp_nb_rx_rcv, cp_nb_rx_ok, cp_nb_tx_ok + cp_nb_tx_fail, cp_nb_tx_ok);
+	    // Create statistics report
+	    stats_report();
 
 	    /* Exit strategies. */
 	    /* Server that are 'off-line may be a reason to exit */
+	    /* move to semtech_transport in due time */
+	    current_time = time(NULL);
+	    pthread_mutex_lock(&mx_meas_up);
+            for (i=0; i<serv_count; i++) { stall_time[i] = (int) (current_time - serv_contact[i]); }
+            pthread_mutex_unlock(&mx_meas_up);
 	    for (ic = 0; ic < serv_count; ic++)
 	    { if ( (serv_max_stall[ic] > 0) && (stall_time[ic] > serv_max_stall[ic]) )
 	      { MSG("ERROR: [main] for server %s stalled for %i seconds, terminating packet forwarder.\n", serv_addr[ic], stall_time[ic]);
@@ -1754,7 +1438,7 @@ int main(void)
     /* if an exit signal was received, try to quit properly */
     if (exit_sig) {
         /* shut down network sockets */
-        ttn_stop();
+        if (ttn_enabled) ttn_stop();
 	sem_stop();
         /* stop the hardware */
 		if (radiostream_enabled == true) {
@@ -1815,8 +1499,9 @@ void thread_up(void) {
             continue;
         }
 		
+	stats_data_up(nb_pkt, rxpkt);
         sem_data_up(nb_pkt, rxpkt, send_report);
-        ttn_data_up(nb_pkt, rxpkt);
+        if (ttn_enabled) ttn_data_up(nb_pkt, rxpkt);
 	if (send_report == true) {
 		report_ready = false;
 	}
@@ -1827,7 +1512,7 @@ void thread_up(void) {
 
 /* -------------------------------------------------------------------------- */
 /* --- THREAD 2: POLLING SERVER AND ENQUEUING PACKETS IN JIT QUEUE ---------- */
-/* --- Moved to semtech_proto.c */
+/* --- Moved to semtech_transport.c */
 // TODO: factor this out and inspect the use of global variables. (Cause this is started for each server)
 
 void print_tx_status(uint8_t tx_status) {
@@ -1879,9 +1564,7 @@ void thread_jit(void) {
                 if (jit_result == JIT_ERROR_OK) {
                     /* update beacon stats */
                     if (pkt_type == JIT_PKT_TYPE_BEACON) {
-                        pthread_mutex_lock(&mx_meas_dw);
-                        meas_nb_beacon_sent += 1;
-                        pthread_mutex_unlock(&mx_meas_dw);
+			increment_down(BEACON_SENT);
                     }
 
                     /* check if concentrator is free for sending new packet */
@@ -1906,15 +1589,11 @@ void thread_jit(void) {
                     result = lgw_send(pkt);
                     pthread_mutex_unlock(&mx_concent); /* free concentrator ASAP */
                     if (result == LGW_HAL_ERROR) {
-                        pthread_mutex_lock(&mx_meas_dw);
-                        meas_nb_tx_fail += 1;
-                        pthread_mutex_unlock(&mx_meas_dw);
+			increment_down(TX_FAIL);
                         LOGGER("WARNING: [jit] lgw_send failed %d\n",result);
                         continue;
                     } else {
-                        pthread_mutex_lock(&mx_meas_dw);
-                        meas_nb_tx_ok += 1;
-                        pthread_mutex_unlock(&mx_meas_dw);
+			increment_down(TX_OK);
                         MSG_DEBUG(DEBUG_PKT_FWD, "lgw_send done: count_us=%u\n", pkt.count_us);
                     }
                 } else {

@@ -61,7 +61,8 @@ Modifications for multi protocol use: Jac Kersing
 #include "mp_pkt_fwd.h"
 #include "ghost.h"
 #include "monitor.h"
-#include "semtech_proto.h"
+#include "semtech_transport.h"
+#include "stats.h"
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
@@ -130,11 +131,6 @@ extern uint32_t tx_freq_max[]; /* highest frequency supported by TX chain */
 
 /* measurements to establish statistics */
 extern pthread_mutex_t mx_meas_up;
-extern uint32_t meas_nb_rx_rcv;
-extern uint32_t meas_nb_rx_ok;
-extern uint32_t meas_nb_rx_bad;
-extern uint32_t meas_nb_rx_nocrc;
-extern uint32_t meas_up_pkt_fwd;
 extern uint32_t meas_up_network_byte;
 extern uint32_t meas_up_payload_byte;
 extern uint32_t meas_up_dgram_sent[MAX_SERVERS];
@@ -147,16 +143,6 @@ extern uint32_t meas_dw_dgram_rcv[MAX_SERVERS];
 extern uint32_t meas_dw_dgram_acp[MAX_SERVERS];
 extern uint32_t meas_dw_network_byte;
 extern uint32_t meas_dw_payload_byte;
-extern uint32_t meas_nb_tx_ok;
-extern uint32_t meas_nb_tx_fail;
-extern uint32_t meas_nb_tx_requested;
-extern uint32_t meas_nb_tx_rejected_collision_packet;
-extern uint32_t meas_nb_tx_rejected_collision_beacon;
-extern uint32_t meas_nb_tx_rejected_too_late;
-extern uint32_t meas_nb_tx_rejected_too_early;
-extern uint32_t meas_nb_beacon_queued;
-extern uint32_t meas_nb_beacon_sent;
-extern uint32_t meas_nb_beacon_rejected;
 
 extern struct coord_s reference_coord;
 extern struct jit_queue_s jit_queue;
@@ -376,33 +362,25 @@ static int send_tx_ack(int ic, uint8_t token_h, uint8_t token_l, enum jit_error_
                 memcpy((void *)(buff_ack + buff_index), (void *)"\"COLLISION_PACKET\"", 18);
                 buff_index += 18;
                 /* update stats */
-                pthread_mutex_lock(&mx_meas_dw);
-                meas_nb_tx_rejected_collision_packet += 1;
-                pthread_mutex_unlock(&mx_meas_dw);
+		increment_down(TX_REJ_COLL_PACKET);
                 break;
             case JIT_ERROR_TOO_LATE:
                 memcpy((void *)(buff_ack + buff_index), (void *)"\"TOO_LATE\"", 10);
                 buff_index += 10;
                 /* update stats */
-                pthread_mutex_lock(&mx_meas_dw);
-                meas_nb_tx_rejected_too_late += 1;
-                pthread_mutex_unlock(&mx_meas_dw);
+		increment_down(TX_REJ_TOO_LATE);
                 break;
             case JIT_ERROR_TOO_EARLY:
                 memcpy((void *)(buff_ack + buff_index), (void *)"\"TOO_EARLY\"", 11);
                 buff_index += 11;
                 /* update stats */
-                pthread_mutex_lock(&mx_meas_dw);
-                meas_nb_tx_rejected_too_early += 1;
-                pthread_mutex_unlock(&mx_meas_dw);
+		increment_down(TX_REJ_TOO_EARLY);
                 break;
             case JIT_ERROR_COLLISION_BEACON:
                 memcpy((void *)(buff_ack + buff_index), (void *)"\"COLLISION_BEACON\"", 18);
                 buff_index += 18;
                 /* update stats */
-                pthread_mutex_lock(&mx_meas_dw);
-                meas_nb_tx_rejected_collision_beacon += 1;
-                pthread_mutex_unlock(&mx_meas_dw);
+		increment_down(TX_REJ_COLL_BEACON);
                 break;
             case JIT_ERROR_TX_FREQ:
                 memcpy((void *)(buff_ack + buff_index), (void *)"\"TX_FREQ\"", 9);
@@ -643,9 +621,7 @@ void sem_thread_down(void* pic) {
                     jit_result = jit_enqueue(&jit_queue, &current_concentrator_time, &beacon_pkt, JIT_PKT_TYPE_BEACON);
                     if (jit_result == JIT_ERROR_OK) {
                         /* update stats */
-                        pthread_mutex_lock(&mx_meas_dw);
-                        meas_nb_beacon_queued += 1;
-                        pthread_mutex_unlock(&mx_meas_dw);
+			increment_down(BEACON_QUEUED);
 
                         /* One more beacon in the queue */
                         beacon_loop--;
@@ -668,11 +644,9 @@ void sem_thread_down(void* pic) {
                         LOGGER("--- end of payload ---\n");
                     } else {
                         /* update stats */
-                        pthread_mutex_lock(&mx_meas_dw);
                         if (jit_result != JIT_ERROR_COLLISION_BEACON) {
-                            meas_nb_beacon_rejected += 1;
+			    increment_down(BEACON_REJECTED);
                         }
-                        pthread_mutex_unlock(&mx_meas_dw);
                         /* In case previous enqueue failed, we retry one period later until it succeeds */
                         /* Note: In case the GPS has been unlocked for a while, there can be lots of retries */
                         /*       to be done from last beacon time to a new valid one */
@@ -1042,9 +1016,7 @@ void sem_thread_down(void* pic) {
                 if (jit_result != JIT_ERROR_OK) {
                 	LOGGER("ERROR: Packet REJECTED (jit error=%d)\n", jit_result);
                 }
-                pthread_mutex_lock(&mx_meas_dw);
-                meas_nb_tx_requested += 1;
-                pthread_mutex_unlock(&mx_meas_dw);
+		increment_down(TX_REQUESTED);
             }
 
             /* Send acknowledge datagram to server */
@@ -1087,10 +1059,6 @@ void sem_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt, bool send_report) {
     /* variables for identification */
     char iso_timestamp[24];
     time_t system_time;
-
-    /* mote info variables */
-    uint32_t mote_addr = 0;
-    uint16_t mote_fcnt = 0;
 
     /* fill the data buffer with fixed fields */
     buff_up[0] = PROTOCOL_VERSION;
@@ -1138,56 +1106,30 @@ void sem_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt, bool send_report) {
     for (i=0; i < nb_pkt; ++i) {
 	p = &rxpkt[i];
 
-	/* Get mote information from current packet (addr, fcnt) */
-	/* FHDR - DevAddr */
-	mote_addr  = p->payload[1];
-	mote_addr |= p->payload[2] << 8;
-	mote_addr |= p->payload[3] << 16;
-	mote_addr |= p->payload[4] << 24;
-	/* FHDR - FCnt */
-	mote_fcnt  = p->payload[6];
-	mote_fcnt |= p->payload[7] << 8;
-
 	/* basic packet filtering */
 	/* Note that in this handling some errors can occur the should not occur. We changed these
 	 * from fatal errors to transient errors. In most cases the users expect that the systems keeps
 	 * alive, just starts routing the next packet */
-	pthread_mutex_lock(&mx_meas_up);
-	meas_nb_rx_rcv += 1;
 	switch(p->status) {
 	    case STAT_CRC_OK:
-		meas_nb_rx_ok += 1;
-		LOGGER("INFO: [up] received packet with valid CRC from mote: %08X (fcnt=%u)\n", mote_addr, mote_fcnt );
 		if (!fwd_valid_pkt) {
-		    pthread_mutex_unlock(&mx_meas_up);
 		    continue; /* skip that packet */
 		}
 		break;
 	    case STAT_CRC_BAD:
-		meas_nb_rx_bad += 1;
-		LOGGER("INFO: [up] received packet with bad CRC from mote: %08X (fcnt=%u)\n", mote_addr, mote_fcnt );
 		if (!fwd_error_pkt) {
-		    pthread_mutex_unlock(&mx_meas_up);
 		    continue; /* skip that packet */
 		}
 		break;
 	    case STAT_NO_CRC:
-		meas_nb_rx_nocrc += 1;
-		LOGGER("INFO: [up] received packet without CRC from mote: %08X (fcnt=%u)\n", mote_addr, mote_fcnt );
 		if (!fwd_nocrc_pkt) {
-		    pthread_mutex_unlock(&mx_meas_up);
 		    continue; /* skip that packet */
 		}
 		break;
 	    default:
-		    LOGGER("WARNING: [up] received packet with unknown status %u (size %u, modulation %u, BW %u, DR %u, RSSI %.1f)\n", p->status, p->size, p->modulation, p->bandwidth, p->datarate, p->rssi);
-		pthread_mutex_unlock(&mx_meas_up);
 		continue; /* skip that packet */
 		// exit(EXIT_FAILURE);
 	}
-	meas_up_pkt_fwd += 1;
-	meas_up_payload_byte += p->size;
-	pthread_mutex_unlock(&mx_meas_up);
 
 	/* Start of packet, add inter-packet separator if necessary */
 	if (pkt_in_dgram == 0) {

@@ -544,3 +544,19 @@ void jit_report_queue(struct jit_queue_s *queue) {
     MSG("# INFO: JIT queue contains %d beacons.\n", num_beacon);
 }
 
+char *jit_error(enum jit_error_e error) {
+    switch (error) {
+        case JIT_ERROR_OK: return "Packet ok to be sent";
+        case JIT_ERROR_TOO_LATE: return "Too late to send this packet";
+        case JIT_ERROR_TOO_EARLY: return "Too early to queue this packet";
+        case JIT_ERROR_FULL: return "Downlink queue is full";
+        case JIT_ERROR_EMPTY: return "Downlink queue is empty";
+        case JIT_ERROR_COLLISION_PACKET: return "A packet is already enqueued for this timeframe";
+        case JIT_ERROR_COLLISION_BEACON: return "A beacon is planned for this timeframe";
+        case JIT_ERROR_TX_FREQ: return "The required frequency for downlink is not supported";
+        case JIT_ERROR_TX_POWER: return "The required power for downlink is not supported";
+        case JIT_ERROR_GPS_UNLOCKED: return "GPS timestamp could not be used as GPS is unlocked";
+        case JIT_ERROR_INVALID: return "Packet is invalid";
+	default: return "Invalid error code";
+    }
+}

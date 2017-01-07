@@ -154,6 +154,7 @@ void jit_print_queue(struct jit_queue_s *queue, bool show_all, int debug_level);
 /* Simplified version for the logging */
 void jit_report_queue(struct jit_queue_s *queue);
 
+char* jit_error(enum jit_error_e error);
 
 #endif
 /* --- EOF ------------------------------------------------------------------ */

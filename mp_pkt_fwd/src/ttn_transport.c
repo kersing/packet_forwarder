@@ -1,5 +1,5 @@
 /*
- * ttn_proto.c
+ * ttn_transport.c
  *
  *  Created on: Dec 5, 2016
  *      Author: Jac Kersing
@@ -35,6 +35,7 @@
 #include "loragw_hal.h"
 #include "loragw_gps.h"
 #include "mp_pkt_fwd.h"
+#include "stats.h"
 
 #include "connector.h"
 
@@ -54,6 +55,7 @@ extern struct lgw_tx_gain_lut_s txlut; /* TX gain table */
 extern uint32_t tx_freq_min[]; /* lowest frequency supported by TX chain */
 extern uint32_t tx_freq_max[]; /* highest frequency supported by TX chain */
 
+extern bool ttn_enabled;
 extern bool gps_enabled;
 extern bool gps_ref_valid;
 extern bool gps_fake_enable;
@@ -65,7 +67,6 @@ extern int8_t antenna_gain;
 
 extern pthread_mutex_t mx_meas_up;
 extern pthread_mutex_t mx_meas_dw;
-extern uint32_t meas_nb_tx_requested;
 
 extern char platform[];
 extern char email[];
@@ -84,7 +85,7 @@ static void ttn_downlink(Router__DownlinkMessage *msg, void *arg) {
     int i;
     short x0, x1;
 
-MSG("INFO: [down] TTN received downlink %s\n",msg->has_payload ? "with payload" : "empty???");
+    MSG("INFO: [down] TTN received downlink %s\n",msg->has_payload ? "with payload" : "empty???");
 
     if (msg->has_payload) {
         MSG("INFO: [TTN] downlink %d bytes\n",(int) msg->payload.len);
@@ -182,11 +183,26 @@ MSG("INFO: [down] TTN received downlink %s\n",msg->has_payload ? "with payload" 
 			get_concentrator_time(&current_concentrator_time, current_unix_time);
 			jit_result = jit_enqueue(&jit_queue, &current_concentrator_time, &txpkt, downlink_type);
 			if (jit_result != JIT_ERROR_OK) {
-				MSG("ERROR: [down] Packet REJECTED (jit error=%d)\n", jit_result);
+			    switch (jit_result) {
+				case JIT_ERROR_FULL:
+				case JIT_ERROR_COLLISION_PACKET:
+				    increment_down(TX_REJ_COLL_PACKET);
+				    break;
+				case JIT_ERROR_TOO_LATE:
+				    increment_down(TX_REJ_TOO_LATE);
+				    break;
+				case JIT_ERROR_TOO_EARLY:
+				    increment_down(TX_REJ_TOO_EARLY);
+				    break;
+				case JIT_ERROR_COLLISION_BEACON:
+				    increment_down(TX_REJ_COLL_BEACON);
+				    break;
+			    	default:
+				    break;
+			    }
+			    MSG("ERROR: [down] Packet REJECTED (jit error=%d %s)\n", jit_result,jit_error(jit_result));
 			}
-			pthread_mutex_lock(&mx_meas_dw);
-			meas_nb_tx_requested += 1;
-			pthread_mutex_unlock(&mx_meas_dw);
+			increment_down(TX_REQUESTED);
 		    }
 		}
 		break;
@@ -197,21 +213,25 @@ MSG("INFO: [down] TTN received downlink %s\n",msg->has_payload ? "with payload" 
     }
 }
 
-void ttn_init(void) {
+int ttn_init(void) {
     MSG("INFO: [TTN] Initializing protocol\n");
     ttngwc_init(&ttn, ttn_gateway_id, &ttn_downlink, NULL);
     if (!ttn) {
     	MSG("ERROR: [TTN] Initialize failed");
-	return;
+	ttn_enabled = 0;
+	return 1;
     }
     MSG("INFO: [TTN] Connecting\n");
+    //int err = ttngwc_connect(ttn, "23.97.152.238", 1883, ttn_gateway_key);
     int err = ttngwc_connect(ttn, "23.97.152.238", 1883, NULL);
     if (err != 0) {
     	MSG("ERROR: [TTN] Connection failed");
     	ttngwc_cleanup(ttn);
-	return;
+	ttn_enabled = 0;
+	return 1;
     }
     MSG("INFO: [TTN] Connected\n");
+    return 0;
 }
 
 void ttn_stop(void) {
@@ -230,6 +250,8 @@ void ttn_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
     char *bandwidth;
     char dbbuf[10];
     int err;
+    uint32_t mote_addr = 0;
+    time_t system_time;
 
     for (i=0; i < nb_pkt; ++i) {
     	p = &rxpkt[i];
@@ -238,6 +260,13 @@ void ttn_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
 	if (p->modulation != MOD_LORA) {
 	    continue;
 	}
+
+	// basic sanity check required for USB interfaced modules
+	mote_addr  = p->payload[1];
+	mote_addr |= p->payload[2] << 8;
+	mote_addr |= p->payload[3] << 16;
+	mote_addr |= p->payload[4] << 24;
+	if (mote_addr == 0) continue;
 
 	switch (p->status) {
 	    case STAT_CRC_OK:
@@ -249,6 +278,8 @@ void ttn_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
 	    case STAT_NO_CRC:
 	    	if (!fwd_nocrc_pkt) continue;
 		break;
+	    default:
+	    	continue;
 	}
 	Router__UplinkMessage up = ROUTER__UPLINK_MESSAGE__INIT;
 	up.has_payload = 1;
@@ -295,7 +326,7 @@ void ttn_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
 		bandwidth="BW500";
 		break;
 	    default:
-		MSG("ERROR: [up] lora packet with unknown bandwidth\n");
+		MSG("ERROR: [up] TTN lora packet with unknown bandwidth\n");
 		continue; /* skip that packet*/
 	}
 	sprintf(dbbuf,"%s%s",datarate,bandwidth);
@@ -319,13 +350,15 @@ void ttn_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
 		lorawan.coding_rate="OFF";
 		break;
 	    default:
-		MSG("ERROR: [up] lora packet with unknown coderate\n");
+		MSG("ERROR: [up] TTN lora packet with unknown coderate\n");
 		continue; /* skip that packet*/
 	}
 	lorawan.has_f_cnt = 1;
 	lorawan.f_cnt = p->payload[6] | p->payload[7] << 8;
 	protocol.lorawan = &lorawan;
 	up.protocol_metadata = &protocol;
+
+	system_time = time(NULL);
 
 	// Set gateway metadata
 	Gateway__RxMetadata gateway = GATEWAY__RX_METADATA__INIT;
@@ -341,34 +374,65 @@ void ttn_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
 	gateway.rssi = p->rssi;
 	gateway.has_snr = 1;
 	gateway.snr = p->snr;
+	gateway.has_time = 1;
+	gateway.time = system_time * 1000000000;
 	up.gateway_metadata = &gateway;
+
 
 	// send message uplink
 	err = ttngwc_send_uplink(ttn, &up);
 	if (err)
-	    MSG("ERROR: [up] lora packet send failed\n");
+	    MSG("ERROR: [up] TTN lora packet send failed\n");
 	else
-	    MSG("INFO: [up] lora packet send successful\n");
+	    MSG("INFO: [up] TTN lora packet send successful\n");
     }	
 }
 
 void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_ok) {
     int err;
+    double load[3];
+    struct timeval current_concentrator_time;
+    struct timeval current_unix_time;
+    static uint32_t tx_in_tot = 0;
+    static uint32_t tx_ok_tot = 0;
+    static uint32_t rx_in_tot = 0;
+    static uint32_t rx_ok_tot = 0;
+
+    rx_in_tot = rx_in_tot + rx_in;
+    rx_ok_tot = rx_ok_tot + rx_ok;
+    tx_in_tot = tx_in_tot + tx_in;
+    tx_ok_tot = tx_ok_tot + tx_ok;
 
     Gateway__Status status = GATEWAY__STATUS__INIT;
     status.has_timestamp = 1;
-    status.timestamp = time(NULL);
+    gettimeofday(&current_unix_time, NULL);
+    get_concentrator_time(&current_concentrator_time, current_unix_time);
+    status.timestamp = current_concentrator_time.tv_sec * 1000000UL + current_concentrator_time.tv_usec;
+    status.has_time = 1;
+    status.time = status.timestamp * 1000000000;
     status.platform = platform;
     status.contact_email = email;
     status.description = description;
     status.has_rx_in = 1;
-    status.rx_in = rx_in;
+    status.rx_in = rx_in_tot;
     status.has_rx_ok = 1;
-    status.rx_ok = rx_ok;
+    status.rx_ok = rx_ok_tot;
     status.has_tx_in = 1;
-    status.tx_in = tx_in;
+    status.tx_in = tx_in_tot;
     status.has_tx_ok = 1;
-    status.tx_ok = tx_ok;
+    status.tx_ok = tx_ok_tot;
+
+    // Get load average
+    if (getloadavg(load, 3) == 3) {
+    	Gateway__Status__OSMetrics osmetrics = GATEWAY__STATUS__OSMETRICS__INIT;
+	osmetrics.has_load_1 = 1;
+	osmetrics.load_1 = load[0];
+	osmetrics.has_load_5 = 1;
+	osmetrics.load_5 = load[1];
+	osmetrics.has_load_15 = 1;
+	osmetrics.load_15 = load[2];
+	status.os = &osmetrics;
+    }
 
     if (gps_fake_enable || (gps_enabled == true && gps_ref_valid == true)) {
 	Gateway__GPSMetadata location = GATEWAY__GPSMETADATA__INIT;
