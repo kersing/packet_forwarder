@@ -409,7 +409,7 @@ void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_o
     get_concentrator_time(&current_concentrator_time, current_unix_time);
     status.timestamp = current_concentrator_time.tv_sec * 1000000UL + current_concentrator_time.tv_usec;
     status.has_time = 1;
-    status.time = status.timestamp * 1000000000;
+    status.time = time(NULL) * 1000000000;
     status.platform = platform;
     status.contact_email = email;
     status.description = description;
@@ -422,6 +422,7 @@ void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_o
     status.has_tx_ok = 1;
     status.tx_ok = tx_ok_tot;
 
+#if 0		// crashes on MultiTech and doesn't seem to work anyway
     // Get load average
     if (getloadavg(load, 3) == 3) {
     	Gateway__Status__OSMetrics osmetrics = GATEWAY__STATUS__OSMETRICS__INIT;
@@ -433,6 +434,7 @@ void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_o
 	osmetrics.load_15 = load[2];
 	status.os = &osmetrics;
     }
+#endif
 
     if (gps_fake_enable || (gps_enabled == true && gps_ref_valid == true)) {
 	Gateway__GPSMetadata location = GATEWAY__GPSMETADATA__INIT;
