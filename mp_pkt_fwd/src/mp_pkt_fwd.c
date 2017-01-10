@@ -255,7 +255,8 @@ char platform[24]    = DISPLAY_PLATFORM;  /* platform definition */
 char email[40]       = "";                /* used for contact email */
 char description[64] = "";                /* used for free form description */
 char ttn_gateway_id[64] = "";		  /* gateway ID for The Things Network */
-char ttn_gateway_key[100] = "";		  /* gateway key to connect to TTN */
+char ttn_gateway_key[200] = "";		  /* gateway key to connect to TTN */
+char ttn_gateway_addr[200] = "";	  /* gateway to connect to */
 
 /* -------------------------------------------------------------------------- */
 /* --- MAC OSX Extensions  -------------------------------------------------- */
@@ -847,6 +848,10 @@ static int parse_gateway_configuration(const char * conf_file) {
     val = json_object_get_value(conf_obj, "stat_interval");
     if (val != NULL) {
         stat_interval = (unsigned)json_value_get_number(val);
+	/* limit because ttn-gateway-connector will disconnect due to mqtt timeouts */
+	if (stat_interval > 60) {
+		stat_interval = 55;
+	}
         MSG("INFO: statistics display interval is configured to %u seconds\n", stat_interval);
     }
 
@@ -1097,7 +1102,14 @@ static int parse_gateway_configuration(const char * conf_file) {
 	str = json_object_get_string(conf_obj, "ttn_gateway_key");
 	if (str != NULL) {
 		snprintf(ttn_gateway_key, sizeof ttn_gateway_key,"%s",str);
-		MSG("INFO: TTN gateway key configured to \"%s\"\n", ttn_gateway_key);
+		MSG("INFO: TTN gateway key configured\n");
+	}
+
+	/* Read value of ttn_gateway_address */
+	str = json_object_get_string(conf_obj, "ttn_gateway_address");
+	if (str != NULL) {
+		snprintf(ttn_gateway_addr, sizeof ttn_gateway_addr,"%s",str);
+		MSG("INFO: TTN gateway address configured to \"%s\"\n", ttn_gateway_addr);
 	}
 
     /* free JSON parsing data structure */

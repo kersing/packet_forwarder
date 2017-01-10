@@ -73,6 +73,7 @@ extern char email[];
 extern char description[];
 extern char ttn_gateway_id[];
 extern char ttn_gateway_key[];
+extern char ttn_gateway_addr[];
 
 static void ttn_downlink(Router__DownlinkMessage *msg, void *arg) {
     struct lgw_pkt_tx_s txpkt;
@@ -222,8 +223,7 @@ int ttn_init(void) {
 	return 1;
     }
     MSG("INFO: [TTN] Connecting\n");
-    //int err = ttngwc_connect(ttn, "23.97.152.238", 1883, ttn_gateway_key);
-    int err = ttngwc_connect(ttn, "23.97.152.238", 1883, NULL);
+    int err = ttngwc_connect(ttn, ttn_gateway_addr, 1883, ttn_gateway_key);
     if (err != 0) {
     	MSG("ERROR: [TTN] Connection failed");
     	ttngwc_cleanup(ttn);
@@ -450,7 +450,7 @@ void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_o
 
     err = ttngwc_send_status(ttn, &status);
     if (err)
-	MSG("ERROR: [status] TTN send status failed\n");
+	MSG("ERROR: [status] TTN send status failed (%d)\n",err);
     else
 	MSG("INFO: [status] TTN send status success\n");
 }
