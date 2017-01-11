@@ -256,7 +256,7 @@ char email[40]       = "";                /* used for contact email */
 char description[64] = "";                /* used for free form description */
 char ttn_gateway_id[64] = "";		  /* gateway ID for The Things Network */
 char ttn_gateway_key[200] = "";		  /* gateway key to connect to TTN */
-char ttn_gateway_addr[200] = "";	  /* gateway to connect to */
+char ttn_addr[200] = "";		  /* router to connect to */
 
 /* -------------------------------------------------------------------------- */
 /* --- MAC OSX Extensions  -------------------------------------------------- */
@@ -1105,11 +1105,11 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: TTN gateway key configured\n");
 	}
 
-	/* Read value of ttn_gateway_address */
-	str = json_object_get_string(conf_obj, "ttn_gateway_address");
+	/* Read value of ttn_address */
+	str = json_object_get_string(conf_obj, "ttn_address");
 	if (str != NULL) {
-		snprintf(ttn_gateway_addr, sizeof ttn_gateway_addr,"%s",str);
-		MSG("INFO: TTN gateway address configured to \"%s\"\n", ttn_gateway_addr);
+		snprintf(ttn_addr, sizeof ttn_addr,"%s",str);
+		MSG("INFO: TTN address configured to \"%s\"\n", ttn_addr);
 	}
 
     /* free JSON parsing data structure */

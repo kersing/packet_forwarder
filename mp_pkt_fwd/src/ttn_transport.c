@@ -73,7 +73,7 @@ extern char email[];
 extern char description[];
 extern char ttn_gateway_id[];
 extern char ttn_gateway_key[];
-extern char ttn_gateway_addr[];
+extern char ttn_addr[];
 
 static void ttn_downlink(Router__DownlinkMessage *msg, void *arg) {
     struct lgw_pkt_tx_s txpkt;
@@ -223,7 +223,7 @@ int ttn_init(void) {
 	return 1;
     }
     MSG("INFO: [TTN] Connecting\n");
-    int err = ttngwc_connect(ttn, ttn_gateway_addr, 1883, ttn_gateway_key);
+    int err = ttngwc_connect(ttn, ttn_addr, 1883, ttn_gateway_key);
     if (err != 0) {
     	MSG("ERROR: [TTN] Connection failed");
     	ttngwc_cleanup(ttn);
@@ -375,7 +375,7 @@ void ttn_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
 	gateway.has_snr = 1;
 	gateway.snr = p->snr;
 	gateway.has_time = 1;
-	gateway.time = system_time * 1000000000;
+	gateway.time = ((uint64_t) system_time) * 1000000000;
 	up.gateway_metadata = &gateway;
 
 
@@ -409,7 +409,7 @@ void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_o
     get_concentrator_time(&current_concentrator_time, current_unix_time);
     status.timestamp = current_concentrator_time.tv_sec * 1000000UL + current_concentrator_time.tv_usec;
     status.has_time = 1;
-    status.time = time(NULL) * 1000000000;
+    status.time = ((uint64_t)time(NULL)) * 1000000000;
     status.platform = platform;
     status.contact_email = email;
     status.description = description;
