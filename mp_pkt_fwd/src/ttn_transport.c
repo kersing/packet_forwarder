@@ -240,6 +240,13 @@ void ttn_stop(void) {
     ttngwc_cleanup(ttn);
 }
 
+void ttn_reconnect(void) {
+    MSG("INFO: [TTN] Reconnecting\n");
+    ttngwc_disconnect(ttn);
+    ttngwc_cleanup(ttn);
+    ttn_init();
+}
+
 void ttn_thread_down(void* pic) {
 }
 
@@ -381,8 +388,10 @@ void ttn_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
 
 	// send message uplink
 	err = ttngwc_send_uplink(ttn, &up);
-	if (err)
+	if (err) {
 	    MSG("ERROR: [up] TTN lora packet send failed\n");
+	    ttn_reconnect();
+	}
 	else
 	    MSG("INFO: [up] TTN lora packet send successful\n");
     }	
@@ -404,6 +413,8 @@ void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_o
     tx_ok_tot = tx_ok_tot + tx_ok;
 
     Gateway__Status status = GATEWAY__STATUS__INIT;
+    Gateway__Status__OSMetrics osmetrics = GATEWAY__STATUS__OSMETRICS__INIT;
+    Gateway__GPSMetadata location = GATEWAY__GPSMETADATA__INIT;
     status.has_timestamp = 1;
     gettimeofday(&current_unix_time, NULL);
     get_concentrator_time(&current_concentrator_time, current_unix_time);
@@ -422,10 +433,8 @@ void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_o
     status.has_tx_ok = 1;
     status.tx_ok = tx_ok_tot;
 
-#if 0		// crashes on MultiTech and doesn't seem to work anyway
     // Get load average
     if (getloadavg(load, 3) == 3) {
-    	Gateway__Status__OSMetrics osmetrics = GATEWAY__STATUS__OSMETRICS__INIT;
 	osmetrics.has_load_1 = 1;
 	osmetrics.load_1 = load[0];
 	osmetrics.has_load_5 = 1;
@@ -434,10 +443,8 @@ void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_o
 	osmetrics.load_15 = load[2];
 	status.os = &osmetrics;
     }
-#endif
 
     if (gps_fake_enable || (gps_enabled == true && gps_ref_valid == true)) {
-	Gateway__GPSMetadata location = GATEWAY__GPSMETADATA__INIT;
 	location.has_latitude = 1;
 	location.latitude = gps_fake_enable ? reference_coord.lat : meas_gps_coord.lat;
 	location.has_longitude = 1;
@@ -449,11 +456,12 @@ void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_o
     }
 
     err = ttngwc_send_status(ttn, &status);
-    if (err)
-	MSG("ERROR: [status] TTN send status failed (%d)\n",err);
+    if (err) {
+	MSG("ERROR: [status] TTN send status failed\n");
+	ttn_reconnect();
+    }
     else
 	MSG("INFO: [status] TTN send status success\n");
 }
-
 
 // vi: sw=4 ai
