@@ -1,3 +1,9 @@
+THIS IS A WORK IN PROGRESS. USE AT YOUR OWN RISK.
+CONFIG FILES WILL CHANGE DURING THE REFACTORING
+PROCESS.
+
+
+
 The Things Network packet forwarder
 ====================================
 
