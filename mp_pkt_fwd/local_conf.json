@@ -1,0 +1,18 @@
+{
+/* Put there parameters that are different for each gateway (eg. pointing one gateway to a test server while the others stay in production) */
+/* Settings defined in global_conf will be overwritten by those in local_conf */
+    "gateway_conf": {
+        "gateway_ID": "CHANGE-ME:C86000FFFEDDAE29", /* you must pick a unique 64b number for each gateway (represented by an hex string) */
+	"ttn_enable": true,
+	"ttn_gateway_id": "CHANGE-ME:tb-mp-dev-gw",
+	"ttn_gateway_key": "CHANGE-ME:ttn-account-v2.xxxxxxxxxx",
+	"ttn_address": "23.97.152.238",
+        "contact_email" : "CHANGE-ME:j.kersing@the-box.com",
+	"description": "CHANGE-ME:MultiProcol forwarder development gateway",
+	"gps": true,
+        "fake_gps": true,
+        "ref_latitude": CHANGE-ME:53.189768,   /* put your latitude here */
+        "ref_longitude": CHANGE-ME:6.557384,  /* put your longitude here */
+        "ref_altitude": CHANGE-ME:5
+    }
+}

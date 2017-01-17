@@ -1,0 +1,67 @@
+First attempt at installation instructions, in no way complete
+
+1. Get the required sources:
+git clone git@github.com:kersing/lora_gateway_new.git
+git clone git@github.com:kersing/paho.mqtt.embedded-c.git
+git clone git@github.com:kersing/ttn-gateway-connector.git
+git clone git@github.com:kersing/protobuf-c.git
+git clone git@github.com:kersing/mp_forwarder.git
+git clone https://github.com/google/protobuf.git
+
+rename lora_gateway_new to lora_gateway
+
+2. Install protobuf build dependencies
+apt install protobuf-compiler
+apt install libprotobuf-dev
+apt install libprotoc-dev
+
+3. Make sure C compiler is installed and add:
+apt-get install automake
+apt install libtool
+apt install autoconf 
+
+4. To use workstation with MultiTech mCard add:
+apt install libftdi1
+apt install libftdi-dev
+apt install swig
+apt install python-dev
+apt search libusb
+apt install libusb-1.0-0
+apt install libusb-1.0-0-dev
+Get the source for libmpsse-1.3, build and install
+
+5. Build hardware abstraction library:
+cd lora_gateway/libloragw
+Edit library.cfg to configure for the correct hardware
+make
+
+6. Build protobuf-c (only required files):
+cd ../../protobuf-c
+./autogen.sh
+To cross compile:
+./configure --host=x86_64-pc-linux-gnu CFLAGS="-I ../protobuf/src" CXXFLAGS="-I ../protobuf/src"
+For build on target:
+./configure
+All:
+make protobuf-c/libprotobuf-c.la
+mkdir bin
+./libtool install /usr/bin/install -c protobuf-c/libprotobuf-c.la `pwd`/bin
+
+7. Build paho.mqtt.embedded-c:
+cd ../paho.mqtt.embedded-c/
+make
+For build on target:
+sudo make install
+
+8. Build TTN Gateway connector:
+cd ../ttn-gateway-connector
+make
+For build on target:
+sudo cp bin/libttn-gateway-connector.so /usr/lib/
+
+9. Build Multi Protocol forwarder:
+cd ../mp_forwarder/mp_pkt_fwd/
+make
+
+10. Edit local_conf.json to suite needs and copy files to destination
+(or run in place)

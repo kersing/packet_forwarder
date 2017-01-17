@@ -1,0 +1,10 @@
+Todo list for release:
+- Change configuration to structs of related parameters
+- Create generic transport layer to encapsulate different transports
+  generic layer should:
+  - have no blocking calls (due to TCP timeouts or other causes) on transmit
+  - retry connecting where appropriate
+  - encapsulate transport specific statistics
+- Move jit statistics to jit source
+- Implement FSK down in TTN transport
+- Write build instructions, required due to dependencies
