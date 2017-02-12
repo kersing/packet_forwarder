@@ -28,34 +28,37 @@
 #include <assert.h>
 
 #include <pthread.h>
+#include <semaphore.h>
 
+#include "mp_pkt_fwd.h"
 #include "trace.h"
 #include "jitqueue.h"
 #include "timersync.h"
 #include "loragw_hal.h"
 #include "loragw_gps.h"
-#include "mp_pkt_fwd.h"
+#include "connector.h"
+#include "transport.h"
+#include "ttn_transport.h"
 #include "stats.h"
 
-#include "connector.h"
 
 #define MIN_LORA_PREAMB 6 /* minimum Lora preamble length for this application */
 #define STD_LORA_PREAMB 8
 #define MIN_FSK_PREAMB  3 /* minimum FSK preamble length for this application */
 #define STD_FSK_PREAMB  4
 
-TTN *ttn = NULL; 			// TTN Connection
-
 extern bool fwd_valid_pkt;
 extern bool fwd_error_pkt;
 extern bool fwd_nocrc_pkt;
+
+extern volatile bool exit_sig;
+extern volatile bool quit_sig;
 
 /* TX capabilities */
 extern struct lgw_tx_gain_lut_s txlut; /* TX gain table */
 extern uint32_t tx_freq_min[]; /* lowest frequency supported by TX chain */
 extern uint32_t tx_freq_max[]; /* highest frequency supported by TX chain */
 
-extern bool ttn_enabled;
 extern bool gps_enabled;
 extern bool gps_ref_valid;
 extern bool gps_fake_enable;
@@ -67,15 +70,25 @@ extern int8_t antenna_gain;
 
 extern pthread_mutex_t mx_meas_up;
 extern pthread_mutex_t mx_meas_dw;
+extern pthread_mutex_t mx_queues;
 
 extern char platform[];
 extern char email[];
 extern char description[];
-extern char ttn_gateway_id[];
-extern char ttn_gateway_key[];
-extern char ttn_addr[];
 
-static void ttn_downlink(Router__DownlinkMessage *msg, void *arg) {
+extern Server servers[];
+
+void ttn_init(int idx) {
+    // Create upstream thread and connect
+    int i = pthread_create( &servers[idx].t_up, NULL, (void * (*)(void *))ttn_upstream, (void *) (long) idx);
+    if (i != 0) {
+	MSG("ERROR: [ttn] failed to create upstream thread for server \"%s\"\n",servers[i].addr);
+	exit(EXIT_FAILURE);
+    }
+    ttn_connect(idx);
+}
+
+void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *arg) {
     struct lgw_pkt_tx_s txpkt;
     bool sent_immediate = false; /* option to sent the packet immediately */
     enum jit_pkt_type_e downlink_type;
@@ -214,190 +227,266 @@ static void ttn_downlink(Router__DownlinkMessage *msg, void *arg) {
     }
 }
 
-int ttn_init(void) {
-    MSG("INFO: [TTN] Initializing protocol\n");
-    ttngwc_init(&ttn, ttn_gateway_id, &ttn_downlink, NULL);
-    if (!ttn) {
-    	MSG("ERROR: [TTN] Initialize failed");
-	ttn_enabled = 0;
-	return 1;
-    }
-    MSG("INFO: [TTN] Connecting\n");
-    int err = ttngwc_connect(ttn, ttn_addr, 1883, ttn_gateway_key);
-    if (err != 0) {
-    	MSG("ERROR: [TTN] Connection failed");
-    	ttngwc_cleanup(ttn);
-	ttn_enabled = 0;
-	return 1;
-    }
-    MSG("INFO: [TTN] Connected\n");
-    return 0;
+void ttn_dummy_downlink(__attribute__ ((unused)) Router__DownlinkMessage *msg, __attribute__ ((unused)) void *arg) {
+    // Used when downlink is disabled for a server
 }
 
-void ttn_stop(void) {
-    MSG("INFO: [TTN] Disconnecting\n");
-    ttngwc_disconnect(ttn);
-    ttngwc_cleanup(ttn);
+void ttn_data_up(int idx, int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
+    Queue *entry; 
+    Queue *last;
+
+    // Don't queue data for disconnected servers
+    if (servers[idx].live == false) return;
+
+    // queue data for transmission
+    entry = (Queue *)malloc(sizeof(Queue));
+    if (entry == NULL) {
+	MSG("ERROR: [ttn] cannot allocate memory for upstream data\n");
+	// should this be fatal?? Not for now
+	return;
+    }
+    memcpy(entry->data, rxpkt, sizeof entry->data);
+    entry->nbpkt = nb_pkt;
+    entry->status = NULL;
+    entry->next = NULL;
+    pthread_mutex_lock(&mx_queues);
+    last = servers[idx].queue;
+    if (last == NULL) servers[idx].queue = entry;
+    else {
+	while (last->next != NULL) last = last->next;
+	last->next = entry;
+    }
+    pthread_mutex_unlock(&mx_queues);
+
+    // Wake send thread
+    sem_post(&servers[idx].send_sem);
 }
 
-void ttn_reconnect(void) {
+void ttn_connect(int idx) {
+    int waittime = 0;
+    while (true) {
+	if (waittime == 0) {
+	    // wait 30 seconds for next attempt
+	    waittime = 30;
+	} else {
+	    sleep(waittime);
+	    if (waittime < 300) waittime = 2 * waittime;
+	}
+	ttngwc_init(&servers[idx].ttn, servers[idx].gw_id, 
+		    servers[idx].downstream == true ? &ttn_downlink : &ttn_dummy_downlink, NULL);
+	if (!servers[idx].ttn) {
+	    MSG("ERROR: [TTN] Initialize server \"%s\" failed, retry in %d seconds",servers[idx].addr,waittime);
+	    servers[idx].live = false;
+	    // Will this ever recover? Retry anyway...
+	    continue;
+	}
+	int err = ttngwc_connect(servers[idx].ttn, servers[idx].addr, 1883, servers[idx].gw_key);
+	if (err != 0) {
+	    MSG("ERROR: [TTN] Connection to server \"%s\" failed, retry in %d seconds",servers[idx].addr,waittime);
+	    ttngwc_cleanup(servers[idx].ttn);
+	    servers[idx].live = false;
+	    continue;
+	}
+	break; 
+    }
+    MSG("INFO: [TTN] server \"%s\" connected\n",servers[idx].addr);
+    servers[idx].live = true;
+}
+
+void ttn_stop(int idx) {
+    sem_post(&servers[idx].send_sem);
+    MSG("INFO: [TTN] Disconnecting server \"%s\"\n",servers[idx].addr);
+    servers[idx].live = false;
+    pthread_join(servers[idx].t_up, NULL);
+    ttngwc_disconnect(servers[idx].ttn);
+    ttngwc_cleanup(servers[idx].ttn);
+}
+
+void ttn_reconnect(int idx) {
+    servers[idx].live = false;
     MSG("INFO: [TTN] Reconnecting\n");
-    ttngwc_disconnect(ttn);
-    ttngwc_cleanup(ttn);
-    ttn_init();
+    ttngwc_disconnect(servers[idx].ttn);
+    ttngwc_cleanup(servers[idx].ttn);
+
+    // Wake send thread to force reconnect
+    sem_post(&servers[idx].send_sem);
 }
 
-void ttn_thread_down(void* pic) {
-}
-
-void ttn_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
+void ttn_upstream(void *pic) {
+    int idx = (int) (long) pic;
     int i;
-    struct lgw_pkt_rx_s *p;
+    struct lgw_pkt_rx_s *p, *rxpkt;
     char *datarate;
     char *bandwidth;
     char dbbuf[10];
     int err;
     uint32_t mote_addr = 0;
     time_t system_time;
+    Queue *entry;
 
-    for (i=0; i < nb_pkt; ++i) {
-    	p = &rxpkt[i];
+    while (!exit_sig && !quit_sig) {
+	// wait for data to arrive
+    	sem_wait(&servers[idx].send_sem);
 
-	// Skip any packet received where modulation is not LoRa for now
-	if (p->modulation != MOD_LORA) {
+	// check connection is up and running
+	if (servers[idx].live == false) {
+	    ttn_connect(idx);
+	}
+
+	// dequeue data
+	pthread_mutex_lock(&mx_queues);
+	entry = servers[idx].queue;
+	if (entry == NULL) {
+	    pthread_mutex_unlock(&mx_queues);
 	    continue;
 	}
+	servers[idx].queue = entry->next;
+	pthread_mutex_unlock(&mx_queues);
 
-	// basic sanity check required for USB interfaced modules
-	mote_addr  = p->payload[1];
-	mote_addr |= p->payload[2] << 8;
-	mote_addr |= p->payload[3] << 16;
-	mote_addr |= p->payload[4] << 24;
-	if (mote_addr == 0) continue;
+	rxpkt = entry->data;
+	for (i=0; i < entry->nbpkt; ++i) {
+	    p = &rxpkt[i];
 
-	switch (p->status) {
-	    case STAT_CRC_OK:
-		if (!fwd_valid_pkt) continue;
+	    // Skip any packet received where modulation is not LoRa for now
+	    if (p->modulation != MOD_LORA) {
+		continue;
+	    }
+
+	    // basic sanity check required for USB interfaced modules
+	    mote_addr  = p->payload[1];
+	    mote_addr |= p->payload[2] << 8;
+	    mote_addr |= p->payload[3] << 16;
+	    mote_addr |= p->payload[4] << 24;
+	    if (mote_addr == 0) continue;
+
+	    switch (p->status) {
+		case STAT_CRC_OK:
+		    if (!fwd_valid_pkt) continue;
+		    break;
+		case STAT_CRC_BAD:
+		    if (!fwd_error_pkt) continue;
+		    break;
+		case STAT_NO_CRC:
+		    if (!fwd_nocrc_pkt) continue;
+		    break;
+		default:
+		    continue;
+	    }
+	    Router__UplinkMessage up = ROUTER__UPLINK_MESSAGE__INIT;
+	    up.has_payload = 1;
+	    up.payload.len = p->size;
+	    up.payload.data = p->payload;
+
+	    // Set protocol metadata
+	    Protocol__RxMetadata protocol = PROTOCOL__RX_METADATA__INIT;
+	    protocol.protocol_case = PROTOCOL__RX_METADATA__PROTOCOL_LORAWAN;
+	    Lorawan__Metadata lorawan = LORAWAN__METADATA__INIT;
+	    lorawan.has_modulation = 1;
+	    lorawan.modulation = LORAWAN__MODULATION__LORA;
+
+	    switch (p->datarate) {
+		case DR_LORA_SF7:
+		    datarate="SF7";
+		    break;
+		case DR_LORA_SF8:
+		    datarate="SF8";
+		    break;
+		case DR_LORA_SF9:
+		    datarate="SF9";
+		    break;
+		case DR_LORA_SF10:
+		    datarate="SF10";
+		    break;
+		case DR_LORA_SF11:
+		    datarate="SF11";
+		    break;
+		case DR_LORA_SF12:
+		    datarate="SF12";
+		    break;
+		default:
+		    continue; /* skip that packet*/
+	    }
+	    switch (p->bandwidth) {
+		case BW_125KHZ:
+		    bandwidth="BW125";
+		    break;
+		case BW_250KHZ:
+		    bandwidth="BW250";
+		    break;
+		case BW_500KHZ:
+		    bandwidth="BW500";
+		    break;
+		default:
+		    MSG("ERROR: [up] TTN lora packet with unknown bandwidth\n");
+		    continue; /* skip that packet*/
+	    }
+	    sprintf(dbbuf,"%s%s",datarate,bandwidth);
+	    lorawan.data_rate = dbbuf;
+
+	    /* Packet ECC coding rate, 11-13 useful chars */
+	    switch (p->coderate) {
+		case CR_LORA_4_5:
+		    lorawan.coding_rate="4/5";
+		    break;
+		case CR_LORA_4_6:
+		    lorawan.coding_rate="4/6";
+		    break;
+		case CR_LORA_4_7:
+		    lorawan.coding_rate="4/7";
+		    break;
+		case CR_LORA_4_8:
+		    lorawan.coding_rate="4/8";
+		    break;
+		case 0: /* treat the CR0 case (mostly false sync) */
+		    lorawan.coding_rate="OFF";
+		    break;
+		default:
+		    MSG("ERROR: [up] TTN lora packet with unknown coderate\n");
+		    continue; /* skip that packet*/
+	    }
+	    lorawan.has_f_cnt = 1;
+	    lorawan.f_cnt = p->payload[6] | p->payload[7] << 8;
+	    protocol.lorawan = &lorawan;
+	    up.protocol_metadata = &protocol;
+
+	    system_time = time(NULL);
+
+	    // Set gateway metadata
+	    Gateway__RxMetadata gateway = GATEWAY__RX_METADATA__INIT;
+	    gateway.has_timestamp = 1;
+	    gateway.timestamp = p->count_us;
+	    gateway.has_rf_chain = 1;
+	    gateway.rf_chain = p->rf_chain;
+	    gateway.has_channel = 1;
+	    gateway.channel = p->if_chain;
+	    gateway.has_frequency = 1;
+	    gateway.frequency = p->freq_hz;
+	    gateway.has_rssi = 1;
+	    gateway.rssi = p->rssi;
+	    gateway.has_snr = 1;
+	    gateway.snr = p->snr;
+	    gateway.has_time = 1;
+	    gateway.time = ((uint64_t) system_time) * 1000000000;
+	    up.gateway_metadata = &gateway;
+
+
+	    // send message uplink
+	    err = ttngwc_send_uplink(servers[idx].ttn, &up);
+	    if (err) {
+		MSG("ERROR: [up] TTN lora send to server \"%s\" failed\n",servers[idx].addr);
+		ttn_reconnect(idx);
 		break;
-	    case STAT_CRC_BAD:
-	    	if (!fwd_error_pkt) continue;
-		break;
-	    case STAT_NO_CRC:
-	    	if (!fwd_nocrc_pkt) continue;
-		break;
-	    default:
-	    	continue;
+	    }
+	    else
+		MSG("INFO: [up] TTN lora packet send to server \"%s\"\n",servers[idx].addr);
 	}
-	Router__UplinkMessage up = ROUTER__UPLINK_MESSAGE__INIT;
-	up.has_payload = 1;
-	up.payload.len = p->size;
-	up.payload.data = p->payload;
 
-	// Set protocol metadata
-	Protocol__RxMetadata protocol = PROTOCOL__RX_METADATA__INIT;
-	protocol.protocol_case = PROTOCOL__RX_METADATA__PROTOCOL_LORAWAN;
-	Lorawan__Metadata lorawan = LORAWAN__METADATA__INIT;
-	lorawan.has_modulation = 1;
-	lorawan.modulation = LORAWAN__MODULATION__LORA;
-
-	switch (p->datarate) {
-	    case DR_LORA_SF7:
-		datarate="SF7";
-		break;
-	    case DR_LORA_SF8:
-		datarate="SF8";
-		break;
-	    case DR_LORA_SF9:
-		datarate="SF9";
-		break;
-	    case DR_LORA_SF10:
-		datarate="SF10";
-		break;
-	    case DR_LORA_SF11:
-		datarate="SF11";
-		break;
-	    case DR_LORA_SF12:
-		datarate="SF12";
-		break;
-	    default:
-		continue; /* skip that packet*/
-	}
-	switch (p->bandwidth) {
-	    case BW_125KHZ:
-		bandwidth="BW125";
-		break;
-	    case BW_250KHZ:
-		bandwidth="BW250";
-		break;
-	    case BW_500KHZ:
-		bandwidth="BW500";
-		break;
-	    default:
-		MSG("ERROR: [up] TTN lora packet with unknown bandwidth\n");
-		continue; /* skip that packet*/
-	}
-	sprintf(dbbuf,"%s%s",datarate,bandwidth);
-	lorawan.data_rate = dbbuf;
-
-	/* Packet ECC coding rate, 11-13 useful chars */
-	switch (p->coderate) {
-	    case CR_LORA_4_5:
-		lorawan.coding_rate="4/5";
-		break;
-	    case CR_LORA_4_6:
-		lorawan.coding_rate="4/6";
-		break;
-	    case CR_LORA_4_7:
-		lorawan.coding_rate="4/7";
-		break;
-	    case CR_LORA_4_8:
-		lorawan.coding_rate="4/8";
-		break;
-	    case 0: /* treat the CR0 case (mostly false sync) */
-		lorawan.coding_rate="OFF";
-		break;
-	    default:
-		MSG("ERROR: [up] TTN lora packet with unknown coderate\n");
-		continue; /* skip that packet*/
-	}
-	lorawan.has_f_cnt = 1;
-	lorawan.f_cnt = p->payload[6] | p->payload[7] << 8;
-	protocol.lorawan = &lorawan;
-	up.protocol_metadata = &protocol;
-
-	system_time = time(NULL);
-
-	// Set gateway metadata
-	Gateway__RxMetadata gateway = GATEWAY__RX_METADATA__INIT;
-	gateway.has_timestamp = 1;
-	gateway.timestamp = p->count_us;
-	gateway.has_rf_chain = 1;
-	gateway.rf_chain = p->rf_chain;
-	gateway.has_channel = 1;
-	gateway.channel = p->if_chain;
-	gateway.has_frequency = 1;
-	gateway.frequency = p->freq_hz;
-	gateway.has_rssi = 1;
-	gateway.rssi = p->rssi;
-	gateway.has_snr = 1;
-	gateway.snr = p->snr;
-	gateway.has_time = 1;
-	gateway.time = ((uint64_t) system_time) * 1000000000;
-	up.gateway_metadata = &gateway;
-
-
-	// send message uplink
-	err = ttngwc_send_uplink(ttn, &up);
-	if (err) {
-	    MSG("ERROR: [up] TTN lora packet send failed\n");
-	    ttn_reconnect();
-	}
-	else
-	    MSG("INFO: [up] TTN lora packet send successful\n");
-    }	
+	// free queue entry
+	free(entry);
+    }
 }
 
-void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_ok) {
+void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_ok) {
     int err;
     double load[3];
     struct timeval current_concentrator_time;
@@ -406,6 +495,9 @@ void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_o
     static uint32_t tx_ok_tot = 0;
     static uint32_t rx_in_tot = 0;
     static uint32_t rx_ok_tot = 0;
+
+    // do not try to send if not connected
+    if (servers[idx].live == false) return;
 
     rx_in_tot = rx_in_tot + rx_in;
     rx_ok_tot = rx_ok_tot + rx_ok;
@@ -455,10 +547,10 @@ void ttn_status_up(uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_o
 	status.gps = &location;
     }
 
-    err = ttngwc_send_status(ttn, &status);
+    err = ttngwc_send_status(servers[idx].ttn, &status);
     if (err) {
 	MSG("ERROR: [status] TTN send status failed\n");
-	ttn_reconnect();
+	ttn_reconnect(idx);
     }
     else
 	MSG("INFO: [status] TTN send status success\n");

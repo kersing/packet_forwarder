@@ -24,7 +24,9 @@
 #include <netdb.h>          /* gai_strerror */
 
 #include <pthread.h>
+#include <semaphore.h>
 
+#include "mp_pkt_fwd.h"
 #include "stats.h"
 #include "trace.h"
 #include "jitqueue.h"
@@ -35,8 +37,9 @@
 #include "loragw_gps.h"
 #include "loragw_aux.h"
 #include "loragw_reg.h"
-#include "mp_pkt_fwd.h"
 #include "ttn_transport.h"
+#include "connector.h"
+#include "transport.h"
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE CONSTANTS ---------------------------------------------------- */
@@ -51,11 +54,7 @@
 /* network configuration variables */
 extern uint8_t serv_count;
 extern uint64_t lgwm;
-extern char serv_addr[][64];
-extern char serv_port_up[][8];
-extern char serv_port_down[][8];
-extern bool serv_live[];
-extern time_t serv_contact[];
+extern Server servers[];
 
 extern bool fwd_valid_pkt;
 extern bool fwd_error_pkt;
@@ -85,7 +84,6 @@ extern bool beacon_enabled;
 extern bool upstream_enabled;
 extern bool downstream_enabled;
 extern bool statusstream_enabled;
-extern bool ttn_enabled;
 extern char stat_format[];
 extern char stat_file[];
 extern int stat_damping;
@@ -354,7 +352,7 @@ void stats_report() {
         memset(meas_up_ack_rcv, 0, sizeof meas_up_ack_rcv);
         /* get timestamp for statistics (must be done inside the lock) */
         current_time = time(NULL);
-        for (i=0; i<serv_count; i++) { stall_time[i] = (int) (current_time - serv_contact[i]); }
+        for (i=0; i<serv_count; i++) { stall_time[i] = (int) (current_time - servers[i].contact); }
         pthread_mutex_unlock(&mx_meas_up);
 
         /* Do the math */
@@ -451,7 +449,7 @@ void stats_report() {
 
         /* display a report */
         printf("\n##### %s #####\n", stat_timestamp);
-        if (upstream_enabled == true || ttn_enabled == true) {
+        if (upstream_enabled == true) {
         	printf("### [UPSTREAM] ###\n");
         	printf("# RF packets received by concentrator: %u\n", cp_nb_rx_rcv);
         	printf("# CRC_OK: %.2f%%, CRC_FAIL: %.2f%%, NO_CRC: %.2f%%\n", 100.0 * rx_ok_ratio, 100.0 * rx_bad_ratio, 100.0 * rx_nocrc_ratio);
@@ -461,7 +459,7 @@ void stats_report() {
         } else {
         	printf("### UPSTREAM IS DISABLED! \n");
         }
-        if (downstream_enabled == true || ttn_enabled == true) {
+        if (downstream_enabled == true) {
         	printf("### [DOWNSTREAM] ###\n");
         	printf("# PULL_DATA sent: %u (%.2f%% acknowledged)\n", cp_dw_pull_sent, 100.0 * dw_ack_ratio);
         	printf("# PULL_RESP(onse) datagrams received: %u (%u bytes)\n", cp_dw_dgram_rcv, cp_dw_network_byte);
@@ -511,12 +509,16 @@ void stats_report() {
      	printf("### [PERFORMANCE] ###\n");
      	if (upstream_enabled == true) {
      		printf("# Upstream radio packet quality: %.2f%%.\n",100*move_up_rx_quality);
-     		for (i=0; i<serv_count; i++) { printf("# Upstream datagram acknowledgment quality for server \"%s\" is %.2f%%.\n",serv_addr[i],100*move_up_ack_quality[i]); }
+     		for (i=0; i<serv_count; i++) { 
+		   if (servers[i].type == semtech && servers[i].upstream == true) printf("# Upstream datagram acknowledgment quality for server \"%s\" is %.2f%%.\n",servers[i].addr,100*move_up_ack_quality[i]); }
      	}
      	if (downstream_enabled == true) {
-     		for (i=0; i<serv_count; i++) { printf("# Downstream heart beat acknowledgment quality for server \"%s\" is %.2f%%.\n",serv_addr[i],100*move_dw_ack_quality[i]); }
-     		for (i=0; i<serv_count; i++) { printf("# Downstream datagram content quality for server \"%s\" is %.2f%%.\n",serv_addr[i],100*move_dw_datagram_quality[i]); }
-     		for (i=0; i<serv_count; i++) { printf("# Downstream radio transmission quality for server \"%s\" is %.2f%%.\n",serv_addr[i],100*move_dw_receive_quality[i]); }
+     		for (i=0; i<serv_count; i++) { 
+		   if (servers[i].type == semtech && servers[i].downstream == true) printf("# Downstream heart beat acknowledgment quality for server \"%s\" is %.2f%%.\n",servers[i].addr,100*move_dw_ack_quality[i]); }
+     		for (i=0; i<serv_count; i++) { 
+		   if (servers[i].type == semtech && servers[i].downstream == true) printf("# Downstream datagram content quality for server \"%s\" is %.2f%%.\n",servers[i].addr,100*move_dw_datagram_quality[i]); }
+     		for (i=0; i<serv_count; i++) { 
+		   if (servers[i].type == semtech && servers[i].downstream == true) printf("# Downstream radio transmission quality for server \"%s\" is %.2f%%.\n",servers[i].addr,100*move_dw_receive_quality[i]); }
      	}
      	if (beacon_enabled == true) {
      		printf("# Downstream beacon transmission quality: %.2f%%.\n",100*move_dw_beacon_quality);
@@ -527,7 +529,7 @@ void stats_report() {
 
      	/* Check which format to use */
      	bool semtech_format       =  strcmp(stat_format,"semtech") == 0;
-     	bool lorank_idee_verbose  =  strcmp(stat_format,"idee_verbose")  == 0;
+     	bool lorank_idee_verbose  =  strcmp(stat_format,"idee_verup")  == 0;
      	bool lorank_idee_concise  =  strcmp(stat_format,"idee_concise")  == 0;
      	bool has_stat_file        =  stat_file[0] != 0;
         JSON_Value *root_value_verbose    = NULL;
@@ -539,12 +541,13 @@ void stats_report() {
 	        root_object_verbose = json_value_get_object(root_value_verbose);
 	    	JSON_Value *servers_array_value  = json_value_init_array();
 	        JSON_Array *servers_array_object = json_value_get_array(servers_array_value);
-	    	for (ic = 0; ic < serv_count; ic++)
-	    	{ JSON_Value *sub_value = json_value_init_object();
+	    	for (ic = 0; ic < serv_count; ic++) { 
+		  if (servers[ic].type != semtech) continue;
+		  JSON_Value *sub_value = json_value_init_object();
 	    	  JSON_Object *sub_object = json_value_get_object(sub_value);
-	    	  json_object_set_string(sub_object, "name", serv_addr[ic]);
-	    	  json_object_set_boolean(sub_object, "found", serv_live[ic] == true);
-	    	  if (serv_live[ic] == true) json_object_set_number(sub_object, "last_seen", stall_time[ic]); else json_object_set_string(sub_object, "last_seen", "never");
+	    	  json_object_set_string(sub_object, "name", servers[ic].addr);
+	    	  json_object_set_boolean(sub_object, "found", servers[ic].live == true);
+	    	  if (servers[ic].live == true) json_object_set_number(sub_object, "last_seen", stall_time[ic]); else json_object_set_string(sub_object, "last_seen", "never");
 	    	  json_array_append_value(servers_array_object,sub_value); }
 	    	json_object_set_value(           root_object_verbose, "servers",                                      servers_array_value);
             json_object_set_string(          root_object_verbose, "time",                                         iso_timestamp);
@@ -642,5 +645,5 @@ void stats_report() {
 	    printf("##### END #####\n");
 
 	    // Send status using TTN protocol
-	    if (ttn_enabled) ttn_status_up(cp_nb_rx_rcv, cp_nb_rx_ok, cp_nb_tx_ok + cp_nb_tx_fail, cp_nb_tx_ok);
+	    transport_status_up(cp_nb_rx_rcv, cp_nb_rx_ok, cp_nb_tx_ok + cp_nb_tx_fail, cp_nb_tx_ok);
 }

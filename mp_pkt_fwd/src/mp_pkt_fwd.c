@@ -54,6 +54,7 @@ Modifications for multi protocol use: Jac Kersing
 #include <pthread.h>
 #include <getopt.h>
 #include <limits.h>
+#include <semaphore.h>
 
 #include "trace.h"
 #include "jitqueue.h"
@@ -68,7 +69,9 @@ Modifications for multi protocol use: Jac Kersing
 #include "ghost.h"
 #include "monitor.h"
 #include "semtech_transport.h"
+#include "connector.h"
 #include "ttn_transport.h"
+#include "transport.h"
 #include "stats.h"
 
 /* -------------------------------------------------------------------------- */
@@ -90,8 +93,6 @@ Modifications for multi protocol use: Jac Kersing
 #ifndef DISPLAY_PLATFORM
   #define DISPLAY_PLATFORM "undefined"
 #endif
-
-#define MAX_SERVERS		    4 /* Support up to 4 servers, more does not seem realistic */
 
 //TODO: This default values are a code-smell, remove.
 #define DEFAULT_SERVER      127.0.0.1   /* hostname also supported */
@@ -117,13 +118,6 @@ Modifications for multi protocol use: Jac Kersing
 #define PKT_PULL_ACK    4
 #define PKT_TX_ACK      5
 
-#define NB_PKT_MAX      8 /* max number of packets per fetch/send cycle */
-
-#define MIN_LORA_PREAMB 6 /* minimum Lora preamble length for this application */
-#define STD_LORA_PREAMB 8
-#define MIN_FSK_PREAMB  3 /* minimum FSK preamble length for this application */
-#define STD_FSK_PREAMB  4
-
 #define STATUS_SIZE		3072
 #define TX_BUFF_SIZE    ((540 * NB_PKT_MAX) + 30 + STATUS_SIZE)
 
@@ -142,13 +136,8 @@ bool fwd_nocrc_pkt = false; /* packets with NO PAYLOAD CRC are NOT forwarded */
 /* network configuration variables */
 uint8_t serv_count = 0; /* Counter for defined servers */
 uint64_t lgwm = 0; /* Lora gateway MAC address */
-char serv_addr[MAX_SERVERS][64]; /* addresses of the server (host name or IPv4/IPv6) */
-char serv_port_up[MAX_SERVERS][8]; /* servers port for upstream traffic */
-char serv_port_down[MAX_SERVERS][8]; /* servers port for downstream traffic */
-bool serv_live[MAX_SERVERS];   /* Register if the server could be defined. */
-time_t serv_contact[MAX_SERVERS]; /* last upstream contact time */
-int serv_max_stall[MAX_SERVERS];  /* maximal acceptable down time of server. */
 int keepalive_time = DEFAULT_KEEPALIVE; /* send a PULL_DATA request every X seconds, negative = disabled */
+Server servers[MAX_SERVERS];	/* Server information */
 
 /* statistics collection configuration variables */
 static unsigned stat_interval = DEFAULT_STAT; /* time interval (in sec) at which statistics are collected and displayed */
@@ -195,6 +184,7 @@ uint32_t meas_dw_network_byte = 0; /* sum of UDP bytes sent for upstream traffic
 uint32_t meas_dw_payload_byte = 0; /* sum of radio payload bytes sent for upstream traffic */
 
 
+pthread_mutex_t mx_queues = PTHREAD_MUTEX_INITIALIZER; /* control access to the queues */
 pthread_mutex_t mx_meas_gps = PTHREAD_MUTEX_INITIALIZER; /* control access to the GPS statistics */
 bool gps_coord_valid; /* could we get valid GPS coordinates ? */
 struct coord_s meas_gps_coord; /* GPS position of the gateway */
@@ -242,7 +232,6 @@ uint32_t tx_freq_min[LGW_RF_CHAIN_NB]; /* lowest frequency supported by TX chain
 uint32_t tx_freq_max[LGW_RF_CHAIN_NB]; /* highest frequency supported by TX chain */
 
 /* Control over the separate streams. Per default, the system behaves like a basic packet forwarder. */
-bool ttn_enabled          = false;   /* controls dataflow to The Things Network                */
 bool upstream_enabled     = true;    /* controls the data flow from end-node to server         */
 bool downstream_enabled   = true;    /* controls the data flow from server to end-node         */
 bool statusstream_enabled = true;    /* controls the data flow of status information to server */
@@ -254,9 +243,6 @@ char gateway_id[20]  = "";                /* string form of gateway mac address 
 char platform[24]    = DISPLAY_PLATFORM;  /* platform definition */
 char email[40]       = "";                /* used for contact email */
 char description[64] = "";                /* used for free form description */
-char ttn_gateway_id[64] = "";		  /* gateway ID for The Things Network */
-char ttn_gateway_key[200] = "";		  /* gateway key to connect to TTN */
-char ttn_addr[200] = "";		  /* router to connect to */
 
 /* -------------------------------------------------------------------------- */
 /* --- MAC OSX Extensions  -------------------------------------------------- */
@@ -289,7 +275,6 @@ static int parse_gateway_configuration(const char * conf_file);
 
 /* threads */
 void thread_up(void);
-//void thread_down(void* pic);
 void thread_gps(void);
 void thread_valid(void);
 void thread_jit(void);
@@ -672,7 +657,9 @@ static int parse_gateway_configuration(const char * conf_file) {
 	JSON_Value *val1 = NULL; /* needed to detect the absence of some fields */
 	JSON_Value *val2 = NULL; /* needed to detect the absence of some fields */
 	JSON_Value *val3 = NULL; /* needed to detect the absence of some fields */
-	JSON_Array *servers = NULL;
+	JSON_Value *val4 = NULL; /* needed to detect the absence of some fields */
+	JSON_Value *val5 = NULL; /* needed to detect the absence of some fields */
+	JSON_Array *confservers = NULL;
 	JSON_Array *syscalls = NULL;
     const char *str; /* pointer to sub-strings in the JSON data */
     unsigned long long ull = 0;
@@ -706,71 +693,129 @@ static int parse_gateway_configuration(const char * conf_file) {
 
 	/* Obtain multiple servers hostnames and ports from array */
 	JSON_Object *nw_server = NULL;
-	servers = json_object_get_array(conf_obj, "servers");
-	if (servers != NULL) {
+	confservers = json_object_get_array(conf_obj, "servers");
+	if (confservers != NULL) {
 		/* serv_count represents the maximal number of servers to be read. */
-		serv_count = json_array_get_count(servers);
+		serv_count = json_array_get_count(confservers);
 		MSG("INFO: Found %i servers in array.\n", serv_count);
 		ic = 0;
 		for (i = 0; i < serv_count  && ic < MAX_SERVERS; i++) {
-			nw_server = json_array_get_object(servers,i);
+			const char *vtype = NULL, *vgwid = NULL, *vgwkey = NULL;
+			nw_server = json_array_get_object(confservers,i);
 			str = json_object_get_string(nw_server, "server_address");
 			val = json_object_get_value(nw_server, "serv_enabled");
 			val1 = json_object_get_value(nw_server, "serv_port_up");
 			val2 = json_object_get_value(nw_server, "serv_port_down");
 			val3 = json_object_get_value(nw_server, "serv_max_stall");
+			val4 = json_object_get_value(nw_server, "serv_up_enabled");
+			val5 = json_object_get_value(nw_server, "serv_down_enabled");
+			vtype = json_object_get_string(nw_server, "serv_type");
+			vgwid = json_object_get_string(nw_server, "serv_gw_id");
+			vgwkey = json_object_get_string(nw_server, "serv_gw_key");
+
 			/* Try to read the fields */
-			if (str != NULL)  snprintf(serv_addr[ic], sizeof serv_addr[ic], "%s",str);
-			if (val1 != NULL) snprintf(serv_port_up[ic], sizeof serv_port_up[ic], "%u", (uint16_t)json_value_get_number(val1));
-			if (val2 != NULL) snprintf(serv_port_down[ic], sizeof serv_port_down[ic], "%u", (uint16_t)json_value_get_number(val2));
-			if (val3 != NULL) serv_max_stall[ic] = (int) json_value_get_number(val3); else serv_max_stall[ic] = 0;
+			if (str != NULL)  snprintf(servers[ic].addr, sizeof servers[ic].addr, "%s",str);
+			if (val1 != NULL) snprintf(servers[ic].port_up, sizeof servers[ic].port_up, "%u", (uint16_t)json_value_get_number(val1));
+			if (val2 != NULL) snprintf(servers[ic].port_down, sizeof servers[ic].port_down, "%u", (uint16_t)json_value_get_number(val2));
+			if (val3 != NULL) servers[ic].max_stall = (int) json_value_get_number(val3); else servers[ic].max_stall = 0;
+			if (val4 != NULL) servers[ic].upstream = (bool) json_value_get_boolean(val4); 
+			if (val5 != NULL) servers[ic].downstream = (bool) json_value_get_boolean(val5); 
 			/* If there is no server name we can only silently progress to the next entry */
 			if (str == NULL) {
 				continue;
+			} else if (vtype != NULL) {
+				if (!strncmp(vtype,"semtech",7)) {
+					servers[ic].type = semtech;
+				}
+				else if (!strncmp(vtype,"ttn",3)) {
+					servers[ic].type = ttn_gw_bridge;
+				}
+				else {
+					MSG("INFO: Skipping server \"%s\" with invalid server type\n", servers[ic].addr);
+					continue;
+				}
+			} else {
+				servers[ic].type = semtech;
 			}
-			/* If there are no ports report and progress to the next entry */
-			else if ((val1 == NULL) || (val2 == NULL)) {
-				MSG("INFO: Skipping server \"%s\" with at least one invalid port number\n", serv_addr[ic]);
+			/* For semtech protocol, if there are no ports report and progress to the next entry */
+			if (servers[ic].type == semtech && ((val1 == NULL) || (val2 == NULL))) {
+				MSG("INFO: Skipping server \"%s\" with at least one invalid port number\n", servers[ic].addr);
 				continue;
 			}
-            /* If the server was explicitly disabled, report and progress to the next entry */
-			else if ( (val != NULL) && ((json_value_get_type(val)) == JSONBoolean) && ((bool)json_value_get_boolean(val) == false )) {
-				MSG("INFO: Skipping disabled server \"%s\"\n", serv_addr[ic]);
+			/* For TTN gateway bridge, if there is no gateway id or no gateway key report and progress to next entry */
+			if (servers[ic].type == ttn_gw_bridge) {
+				if (vgwid == NULL) {
+					MSG("INFO: Skipping server \"%s\" due to missing gateway id\n", servers[ic].addr);
+					continue;
+				} else {
+					strncpy(servers[ic].gw_id, vgwid, sizeof servers[ic].gw_id);
+				}
+				if (vgwkey == NULL) {
+					MSG("INFO: Skipping server \"%s\" due to missing gateway key\n", servers[ic].addr);
+					continue;
+				} else {
+					strncpy(servers[ic].gw_key, vgwkey, sizeof servers[ic].gw_key);
+				}
+			}
+		        /* If the server was explicitly disabled, report and progress to the next entry */
+			if ( (val != NULL) && ((json_value_get_type(val)) == JSONBoolean) && ((bool)json_value_get_boolean(val) == false )) {
+				MSG("INFO: Skipping disabled server \"%s\"\n", servers[ic].addr);
 				continue;
 			}
+			
 			/* All test survived, this is a valid server, report and increase server counter. */
-			MSG("INFO: Server %i configured to \"%s\", with port up \"%s\" and port down \"%s\"\n", ic, serv_addr[ic],serv_port_up[ic],serv_port_down[ic]);
+			MSG("INFO: Server %i configured to \"%s\"\n", ic, servers[ic].addr);
 			/* The server may be valid, it is not yet live. */
-			serv_live[ic] = false;
+			servers[ic].enabled = true;
+			servers[ic].live = false;
 			ic++;
 		}
 		serv_count = ic;
 	} else {
 		/* If there are no servers in server array fall back to old fashioned single server definition.
 		 * The difference with the original situation is that we require a complete definition. */
-    /* server hostname or IP address (optional) */
-    str = json_object_get_string(conf_obj, "server_address");
+	        /* server hostname or IP address (optional) */
+	        str = json_object_get_string(conf_obj, "server_address");
 		val1 = json_object_get_value(conf_obj, "serv_port_up");
 		val2 = json_object_get_value(conf_obj, "serv_port_down");
 		if ((str != NULL) && (val1 != NULL) && (val2 != NULL)) {
 			serv_count = 1;
-			serv_live[0] = false;
-			snprintf(serv_addr[0], sizeof serv_addr[0], "%s",str);
-			snprintf(serv_port_up[0], sizeof serv_port_up[0], "%u", (uint16_t)json_value_get_number(val1));
-			snprintf(serv_port_down[0], sizeof serv_port_down[0], "%u", (uint16_t)json_value_get_number(val2));
-			MSG("INFO: Server configured to \"%s\", with port up \"%s\" and port down \"%s\"\n", serv_addr[0],serv_port_up[0],serv_port_down[0]);
+			servers[0].live = false;
+			strncpy(servers[0].addr, str, sizeof servers[0].addr);
+			snprintf(servers[0].port_up, sizeof servers[0].port_up, "%u", (uint16_t)json_value_get_number(val1));
+			snprintf(servers[0].port_down, sizeof servers[0].port_down, "%u", (uint16_t)json_value_get_number(val2));
+			MSG("INFO: Server configured to \"%s\", with port up \"%s\" and port down \"%s\"\n", servers[0].addr, servers[0].port_up, servers[0].port_down);
 		}
 	}
 
+	/* Check for ttn configuration */
+	val = json_object_get_value(conf_obj, "ttn_enable");
+	if (json_value_get_type(val) == JSONBoolean && ((bool)json_value_get_boolean(val) == true)) {
+		const char *id = NULL, *key = NULL, *addr = NULL;
+		/* Read value of ttn_gateway_id */
+		id = json_object_get_string(conf_obj, "ttn_gateway_id");
+		key = json_object_get_string(conf_obj, "ttn_gateway_key");
+		addr = json_object_get_string(conf_obj, "ttn_address");
+		if (id != NULL && key != NULL && addr != NULL) {
+			strncpy(servers[serv_count].addr, addr, sizeof servers[serv_count].addr);
+			strncpy(servers[serv_count].gw_id, id, sizeof servers[serv_count].gw_id);
+			strncpy(servers[serv_count].gw_key, key, sizeof servers[serv_count].gw_key);
+			servers[serv_count].enabled = true;
+			servers[serv_count].live = false;
+			servers[serv_count].type = ttn_gw_bridge;
+			MSG("INFO: TTN address configured to \"%s\"\n", servers[serv_count].addr);
+			serv_count++;
+		}
+	}
 
 	/* Using the defaults in case no values are present in the JSON */
 	//TODO: Eliminate this default behavior, the server should be well configured or stop.
 	if (serv_count == 0) {
 		MSG("INFO: Using defaults for server and ports (specific ports are ignored if no server is defined)");
-		snprintf(serv_addr[0],sizeof(serv_addr[0]),STR(DEFAULT_SERVER));
-		snprintf(serv_port_up[0],sizeof(serv_port_up[0]),STR(DEFAULT_PORT_UP));
-		snprintf(serv_port_down[0],sizeof(serv_port_down[0]),STR(DEFAULT_PORT_DW));
-		serv_live[0] = false;
+		snprintf(servers[0].addr,sizeof(servers[0].addr),STR(DEFAULT_SERVER));
+		snprintf(servers[0].port_up,sizeof(servers[0].port_up),STR(DEFAULT_PORT_UP));
+		snprintf(servers[0].port_down,sizeof(servers[0].port_down),STR(DEFAULT_PORT_DW));
+		servers[0].live = false;
 		serv_count = 1;
 	}
 
@@ -1085,33 +1130,6 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Description configured to \"%s\"\n", description);
 	}
 
-	/* Read value of ttn_enabled data */
-	val = json_object_get_value(conf_obj, "ttn_enable");
-	if (json_value_get_type(val) == JSONBoolean) {
-		ttn_enabled = (bool)json_value_get_boolean(val);
-	}
-
-	/* Read value of ttn_gateway_id */
-	str = json_object_get_string(conf_obj, "ttn_gateway_id");
-	if (str != NULL) {
-		snprintf(ttn_gateway_id, sizeof ttn_gateway_id,"%s",str);
-		MSG("INFO: TTN gateway ID configured to \"%s\"\n", ttn_gateway_id);
-	}
-
-	/* Read value of ttn_gateway_key */
-	str = json_object_get_string(conf_obj, "ttn_gateway_key");
-	if (str != NULL) {
-		snprintf(ttn_gateway_key, sizeof ttn_gateway_key,"%s",str);
-		MSG("INFO: TTN gateway key configured\n");
-	}
-
-	/* Read value of ttn_address */
-	str = json_object_get_string(conf_obj, "ttn_address");
-	if (str != NULL) {
-		snprintf(ttn_addr, sizeof ttn_addr,"%s",str);
-		MSG("INFO: TTN address configured to \"%s\"\n", ttn_addr);
-	}
-
     /* free JSON parsing data structure */
     json_value_free(root_val);
     return 0;
@@ -1186,7 +1204,6 @@ int main(int argc, char *argv[])
 
     /* threads */
     pthread_t thrid_up;
-    pthread_t thrid_down[MAX_SERVERS];
     pthread_t thrid_gps;
     pthread_t thrid_valid;
     pthread_t thrid_jit;
@@ -1245,6 +1262,9 @@ int main(int argc, char *argv[])
         MSG("INFO: Host endianness unknown\n");
     #endif
 
+    /* initialize transport data */
+    transport_init();
+
     /* load configuration files */
     if (access(debug_cfg_path, R_OK) == 0) { /* if there is a debug conf, parse only the debug conf */
         MSG("INFO: found debug configuration file %s, parsing it\n", debug_cfg_path);
@@ -1295,12 +1315,8 @@ int main(int argc, char *argv[])
     /* clear statistics */
     stats_init();
 
-    /* initialize semtech protocol stack */
-    if (ttn_enabled && ttn_init() != 0) {
-	MSG("ERROR: [main] Failed to connect to TTN\n");
-	exit(EXIT_FAILURE);
-    }
-    sem_init();
+    /* initialize protocol stacks */
+    transport_start();
 
     /* sanity check on configuration variables */
     // TODO
@@ -1329,7 +1345,7 @@ int main(int argc, char *argv[])
 
 	
     /* spawn threads to manage upstream and downstream */
-	if (upstream_enabled == true || ttn_enabled == true) {
+	if (upstream_enabled == true) {
     i = pthread_create( &thrid_up, NULL, (void * (*)(void *))thread_up, NULL);
     if (i != 0) {
         MSG("ERROR: [main] impossible to create upstream thread\n");
@@ -1337,8 +1353,8 @@ int main(int argc, char *argv[])
     }
 	}
 	if (downstream_enabled == true) {
-		for (ic = 0; ic < serv_count; ic++) if (serv_live[ic] == true) {
-			i = pthread_create( &thrid_down[ic], NULL, (void * (*)(void *))sem_thread_down, (void *) (long) ic);
+		for (ic = 0; ic < serv_count; ic++) if (servers[ic].live == true && servers[ic].type == semtech && servers[ic].downstream == true) {
+			i = pthread_create( &servers[ic].t_down, NULL, (void * (*)(void *))semtech_thread_down, (void *) (long) ic);
 			if (i != 0) {
 				MSG("ERROR: [main] impossible to create downstream thread\n");
 				exit(EXIT_FAILURE);
@@ -1356,7 +1372,7 @@ int main(int argc, char *argv[])
     }
 
     // Timer synchronization needed for downstream ...
-    if (gps_active == true || downstream_enabled == true || ttn_enabled == true) {
+    if (gps_active == true || downstream_enabled == true) {
     	i = pthread_create( &thrid_timersync, NULL, (void * (*)(void *))thread_timersync, NULL);
     	if (i != 0) {
     		MSG("ERROR: [main] impossible to create Timer Sync thread\n");
@@ -1416,12 +1432,18 @@ int main(int argc, char *argv[])
 	    /* move to semtech_transport in due time */
 	    current_time = time(NULL);
 	    pthread_mutex_lock(&mx_meas_up);
-            for (i=0; i<serv_count; i++) { stall_time[i] = (int) (current_time - serv_contact[i]); }
+            for (i=0; i<serv_count; i++) { 
+		if (servers[i].type == semtech) {
+		    stall_time[i] = (int) (current_time - servers[i].contact); 
+		}
+	    }
             pthread_mutex_unlock(&mx_meas_up);
-	    for (ic = 0; ic < serv_count; ic++)
-	    { if ( (serv_max_stall[ic] > 0) && (stall_time[ic] > serv_max_stall[ic]) )
-	      { MSG("ERROR: [main] for server %s stalled for %i seconds, terminating packet forwarder.\n", serv_addr[ic], stall_time[ic]);
-			exit(EXIT_FAILURE); } }
+	    for (ic = 0; ic < serv_count; ic++) { 
+	      if ( (servers[i].type == semtech) && (servers[ic].max_stall > 0) && (stall_time[ic] > servers[ic].max_stall) ) { 
+		MSG("ERROR: [main] for server %s stalled for %i seconds, terminating packet forwarder.\n", servers[ic].addr, stall_time[ic]);
+			exit(EXIT_FAILURE); 
+	      } 
+	    }
 
 	    /* Code of gonzalocasas to catch transient hardware failures */
 		uint32_t trig_cnt_us;
@@ -1435,11 +1457,9 @@ int main(int argc, char *argv[])
 
     /* wait for upstream thread to finish (1 fetch cycle max) */
 	if (upstream_enabled == true) pthread_join(thrid_up, NULL);
-	if (downstream_enabled == true) {
-		for (ic = 0; ic < serv_count; ic++)
-			if (serv_live[ic] == true)
-				pthread_join(thrid_down[ic], NULL);
-    }
+    /* shut down transports */
+    transport_stop();
+
     //TODO: Dit heeft nawerk nodig
     pthread_cancel(thrid_jit); /* don't wait for jit thread */
     if (gps_active == true) pthread_cancel(thrid_timersync); /* don't wait for timer sync thread */
@@ -1451,9 +1471,6 @@ int main(int argc, char *argv[])
 
     /* if an exit signal was received, try to quit properly */
     if (exit_sig) {
-        /* shut down network sockets */
-        if (ttn_enabled) ttn_stop();
-	sem_stop();
         /* stop the hardware */
 		if (radiostream_enabled == true) {
         i = lgw_stop();
@@ -1514,8 +1531,7 @@ void thread_up(void) {
         }
 		
 	stats_data_up(nb_pkt, rxpkt);
-        sem_data_up(nb_pkt, rxpkt, send_report);
-        if (ttn_enabled) ttn_data_up(nb_pkt, rxpkt);
+        transport_data_up(nb_pkt, rxpkt, send_report);
 	if (send_report == true) {
 		report_ready = false;
 	}
