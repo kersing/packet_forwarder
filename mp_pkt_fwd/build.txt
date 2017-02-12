@@ -55,6 +55,7 @@ sudo make install
 
 8. Build TTN Gateway connector:
 cd ../ttn-gateway-connector
+cp config.mk.in config.mk
 make
 For build on target:
 sudo cp bin/libttn-gateway-connector.so /usr/lib/

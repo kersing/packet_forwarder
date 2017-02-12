@@ -308,6 +308,8 @@ void semtech_init(int idx) {
 void semtech_stop(int idx) {
     if (downstream_enabled == true && servers[idx].downstream == true) {
 	pthread_join(servers[idx].t_down, NULL);
+	sem_post(&servers[idx].send_sem);
+	pthread_join(servers[idx].t_up, NULL);
 	if (exit_sig) {
 	    shutdown(servers[idx].sock_up, SHUT_RDWR);
 	    shutdown(servers[idx].sock_down, SHUT_RDWR);

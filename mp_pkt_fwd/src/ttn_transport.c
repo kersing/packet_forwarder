@@ -264,7 +264,7 @@ void ttn_data_up(int idx, int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
 
 void ttn_connect(int idx) {
     int waittime = 0;
-    while (true) {
+    while (!exit_sig && !quit_sig) {
 	if (waittime == 0) {
 	    // wait 30 seconds for next attempt
 	    waittime = 30;
@@ -289,15 +289,17 @@ void ttn_connect(int idx) {
 	}
 	break; 
     }
-    MSG("INFO: [TTN] server \"%s\" connected\n",servers[idx].addr);
-    servers[idx].live = true;
+    if (!exit_sig && !quit_sig) {
+	MSG("INFO: [TTN] server \"%s\" connected\n",servers[idx].addr);
+	servers[idx].live = true;
+    }
 }
 
 void ttn_stop(int idx) {
     sem_post(&servers[idx].send_sem);
+    pthread_join(servers[idx].t_up, NULL);
     MSG("INFO: [TTN] Disconnecting server \"%s\"\n",servers[idx].addr);
     servers[idx].live = false;
-    pthread_join(servers[idx].t_up, NULL);
     ttngwc_disconnect(servers[idx].ttn);
     ttngwc_cleanup(servers[idx].ttn);
 }
@@ -328,8 +330,8 @@ void ttn_upstream(void *pic) {
 	// wait for data to arrive
     	sem_wait(&servers[idx].send_sem);
 
-	// check connection is up and running
-	if (servers[idx].live == false) {
+	// check connection is up and running and we're not shutting down
+	if (servers[idx].live == false && !exit_sig && !quit_sig) {
 	    ttn_connect(idx);
 	}
 

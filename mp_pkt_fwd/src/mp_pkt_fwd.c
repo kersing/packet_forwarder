@@ -1424,6 +1424,10 @@ int main(int argc, char *argv[])
         /* wait for next reporting interval */
         wait_ms(1000 * stat_interval);
 
+	if (exit_sig || quit_sig) {
+		break;
+	}
+
 	    // Create statistics report
 	    stats_report();
 
