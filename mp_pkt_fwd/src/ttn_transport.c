@@ -26,6 +26,8 @@
 #include <errno.h>          /* error messages */
 #include <math.h>           /* modf */
 #include <assert.h>
+#include <sys/sysinfo.h>
+#include <fcntl.h>
 
 #include <pthread.h>
 #include <semaphore.h>
@@ -275,14 +277,14 @@ void ttn_connect(int idx) {
 	ttngwc_init(&servers[idx].ttn, servers[idx].gw_id, 
 		    servers[idx].downstream == true ? &ttn_downlink : &ttn_dummy_downlink, NULL);
 	if (!servers[idx].ttn) {
-	    MSG("ERROR: [TTN] Initialize server \"%s\" failed, retry in %d seconds",servers[idx].addr,waittime);
+	    MSG("ERROR: [TTN] Initialize server \"%s\" failed, retry in %d seconds\n",servers[idx].addr,waittime);
 	    servers[idx].live = false;
 	    // Will this ever recover? Retry anyway...
 	    continue;
 	}
 	int err = ttngwc_connect(servers[idx].ttn, servers[idx].addr, 1883, servers[idx].gw_key);
 	if (err != 0) {
-	    MSG("ERROR: [TTN] Connection to server \"%s\" failed, retry in %d seconds",servers[idx].addr,waittime);
+	    MSG("ERROR: [TTN] Connection to server \"%s\" failed, retry in %d seconds\n",servers[idx].addr,waittime);
 	    ttngwc_cleanup(servers[idx].ttn);
 	    servers[idx].live = false;
 	    continue;
@@ -489,8 +491,10 @@ void ttn_upstream(void *pic) {
 }
 
 void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint32_t tx_ok) {
+    static int temp_available = 0;
     int err;
     double load[3];
+    struct sysinfo sys;
     struct timeval current_concentrator_time;
     struct timeval current_unix_time;
     static uint32_t tx_in_tot = 0;
@@ -527,14 +531,31 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
     status.has_tx_ok = 1;
     status.tx_ok = tx_ok_tot;
 
-    // Get load average
-    if (getloadavg(load, 3) == 3) {
+    // Get gateway temperature if available
+    if (temp_available >= 0) {
+    	if (temp_available == 0) {
+	    if (temp_available > 0 || access("/sys/class/hwmon/hwmon0/device/temp1_input",R_OK) == 0) {
+		char buffer[20];
+		int fd = open("/sys/class/hwmon/hwmon0/device/temp1_input",0);
+		if (fd >=0 && read(fd,buffer,10) > 4) {
+		    osmetrics.has_temperature = 1;
+		    osmetrics.temperature= atoi(buffer) / 1000.0;
+		}
+	        temp_available = 1;
+	    }
+	}
+    }
+
+    // Get gateway hardware statistics
+    if (getloadavg(load, 3) == 3 && sysinfo(&sys) == 0) {
 	osmetrics.has_load_1 = 1;
 	osmetrics.load_1 = load[0];
 	osmetrics.has_load_5 = 1;
 	osmetrics.load_5 = load[1];
 	osmetrics.has_load_15 = 1;
 	osmetrics.load_15 = load[2];
+	osmetrics.has_memory_percentage = 1;
+	osmetrics.memory_percentage = ((float)sys.totalram-sys.freeram)*100.0/(sys.totalram);
 	status.os = &osmetrics;
     }
 
