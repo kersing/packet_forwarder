@@ -533,16 +533,14 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
 
     // Get gateway temperature if available
     if (temp_available >= 0) {
-    	if (temp_available == 0) {
-	    if (temp_available > 0 || access("/sys/class/hwmon/hwmon0/device/temp1_input",R_OK) == 0) {
-		char buffer[20];
-		int fd = open("/sys/class/hwmon/hwmon0/device/temp1_input",0);
-		if (fd >=0 && read(fd,buffer,10) > 4) {
-		    osmetrics.has_temperature = 1;
-		    osmetrics.temperature= atoi(buffer) / 1000.0;
-		}
-	        temp_available = 1;
+	if (temp_available > 0 || access("/sys/class/hwmon/hwmon0/device/temp1_input",R_OK) == 0) {
+	    char buffer[20];
+	    int fd = open("/sys/class/hwmon/hwmon0/device/temp1_input",0);
+	    if (fd >=0 && read(fd,buffer,10) > 4) {
+		osmetrics.has_temperature = 1;
+		osmetrics.temperature= atoi(buffer) / 1000.0;
 	    }
+	    temp_available = 1;
 	}
     }
 
