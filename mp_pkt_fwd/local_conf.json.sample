@@ -1,0 +1,23 @@
+{
+/* Put there parameters that are different for each gateway (eg. pointing one gateway to a test server while the others stay in production) */
+/* Settings defined in global_conf will be overwritten by those in local_conf */
+    "gateway_conf": {
+        "gateway_ID": "CHANGE-ME", /* you must pick a unique 64b number for each gateway (represented by an hex string) */
+        "contact_email" : "CHANGE-ME",
+	"description": "CHANGE-ME",
+	 "servers": [
+            {
+                "serv_type": "ttn",
+                "server_address": "<see TTN console>",
+                "serv_gw_id": "<gateway name from console>",
+                "serv_gw_key": "<gateway secret key from console>",
+                "serv_enabled": true           
+	    }
+	],
+	"gps": true,
+        "fake_gps": true,
+        "ref_latitude": CHANGE-ME,   /* put your latitude here */
+        "ref_longitude": CHANGE-ME,  /* put your longitude here */
+        "ref_altitude": CHANGE-ME
+    }
+}

@@ -5,10 +5,8 @@ git clone git@github.com:kersing/lora_gateway_new.git
 git clone git@github.com:kersing/paho.mqtt.embedded-c.git
 git clone git@github.com:kersing/ttn-gateway-connector.git
 git clone git@github.com:kersing/protobuf-c.git
-git clone git@github.com:kersing/mp_forwarder.git
+git clone git@github.com:kersing/packet_forwarder.git
 git clone https://github.com/google/protobuf.git
-
-rename lora_gateway_new to lora_gateway
 
 2. Install protobuf build dependencies
 apt install protobuf-compiler
@@ -61,7 +59,7 @@ For build on target:
 sudo cp bin/libttn-gateway-connector.so /usr/lib/
 
 9. Build Multi Protocol forwarder:
-cd ../mp_forwarder/mp_pkt_fwd/
+cd ../packet_forwarder/mp_pkt_fwd/
 make
 
 10. Edit local_conf.json to suite needs and copy files to destination
