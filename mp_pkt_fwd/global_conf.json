@@ -1,7 +1,8 @@
 {
     "SX1301_conf": {
         "lorawan_public": true,
-        "clksrc": 0, /* radio_1 provides clock to concentrator */
+        "clksrc": 1, /* radio_1 provides clock to concentrator for most devices except MultiTech */
+	/* "clksrc": 0, radio_0 provides clock to concentrator for MultiTech */
         "lbt_cfg": {
             "enable": false,
             "rssi_target": 160, /* rssi in dBm = -lbt_rssi_target/2 */
