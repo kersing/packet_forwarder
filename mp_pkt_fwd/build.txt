@@ -1,7 +1,7 @@
 First attempt at installation instructions, in no way complete
 
 1. Get the required sources:
-git clone git@github.com:kersing/lora_gateway_new.git
+git clone git@github.com:kersing/lora_gateway.git
 git clone git@github.com:kersing/paho.mqtt.embedded-c.git
 git clone git@github.com:kersing/ttn-gateway-connector.git
 git clone git@github.com:kersing/protobuf-c.git
