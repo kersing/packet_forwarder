@@ -557,13 +557,13 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
 	status.os = &osmetrics;
     }
 
-    if (gps_enabled == true && gps_ref_valid == true) {
+    if (gps_fake_enable || (gps_enabled == true && gps_ref_valid == true)) {
 	location.has_latitude = 1;
-	location.latitude = meas_gps_coord.lat;
+	location.latitude = gps_fake_enable ? reference_coord.lat : meas_gps_coord.lat;
 	location.has_longitude = 1;
-	location.longitude = meas_gps_coord.lon;
+	location.longitude = gps_fake_enable ? reference_coord.lon : meas_gps_coord.lon;
 	location.has_altitude = 1;
-	location.altitude = meas_gps_coord.alt;
+	location.altitude = gps_fake_enable ? reference_coord.alt : meas_gps_coord.alt;
 
 	status.gps = &location;
     }
