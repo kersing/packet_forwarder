@@ -504,7 +504,7 @@ void ttn_upstream(void *pic) {
 	    gateway.has_time = 1;
 	    if (ref_ok == true) {
 	    	if (lgw_cnt2utc(local_ref,p->count_us, &pkt_utc_time) == LGW_GPS_SUCCESS) {
-		    gateway.time = pkt_utc_time.tv_sec * 1000000000 + pkt_utc_time.tv_nsec;
+		    gateway.time = ((uint64_t)pkt_utc_time.tv_sec) * 1000000000 + pkt_utc_time.tv_nsec;
 		} else {
 		    system_time = time(NULL);
 		    gateway.time = ((uint64_t) system_time) * 1000000000;
@@ -563,7 +563,7 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
     pthread_mutex_lock(&mx_timeref);
     if (gps_ref_valid == true) {
 	if (lgw_cnt2utc(time_reference_gps,0, &pkt_utc_time) == LGW_GPS_SUCCESS) {
-	    status.time = pkt_utc_time.tv_sec * 1000000000 + pkt_utc_time.tv_nsec;
+	    status.time = ((uint64_t)pkt_utc_time.tv_sec) * 1000000000 + pkt_utc_time.tv_nsec;
 	} else {
 	    status.time = ((uint64_t)time(NULL)) * 1000000000;
 	}
