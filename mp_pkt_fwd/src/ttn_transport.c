@@ -64,6 +64,9 @@ extern uint32_t tx_freq_max[]; /* highest frequency supported by TX chain */
 extern bool gps_enabled;
 extern bool gps_ref_valid;
 extern bool gps_fake_enable;
+extern bool gps_active;
+extern struct tref time_reference_gps;
+extern pthread_mutex_t mx_timeref;
 extern struct coord_s meas_gps_coord;
 extern struct coord_s reference_coord;
 extern struct jit_queue_s jit_queue;
@@ -119,53 +122,65 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 		    txpkt.freq_hz = gtw->frequency;
 		    txpkt.rf_chain = gtw->rf_chain;
 		    txpkt.rf_power = gtw->power - antenna_gain;
-		    switch (lora->modulation) {
-			case LORAWAN__MODULATION__LORA:
-			    txpkt.modulation = MOD_LORA;
-			    break;
-			default:
-			    MSG("WARNING: [down] unsupported modulation\n");
-		    	    return;
-		    }
-		    i = sscanf(lora->data_rate, "SF%2hdBW%3hd", &x0, &x1);
-		    if (i != 2) {
-			MSG("WARNING: [down] format error in \"data_rate\" (%s), TX aborted\n",lora->data_rate);
+
+		    if (lora->modulation == LORAWAN__MODULATION__LORA) {
+			txpkt.modulation = MOD_LORA;
+			i = sscanf(lora->data_rate, "SF%2hdBW%3hd", &x0, &x1);
+			if (i != 2) {
+			    MSG("WARNING: [down] format error in \"data_rate\" (%s), TX aborted\n",lora->data_rate);
+			    return;
+			}
+			switch (x0) {
+			    case  7: txpkt.datarate = DR_LORA_SF7;  break;
+			    case  8: txpkt.datarate = DR_LORA_SF8;  break;
+			    case  9: txpkt.datarate = DR_LORA_SF9;  break;
+			    case 10: txpkt.datarate = DR_LORA_SF10; break;
+			    case 11: txpkt.datarate = DR_LORA_SF11; break;
+			    case 12: txpkt.datarate = DR_LORA_SF12; break;
+			    default:
+				MSG("WARNING: [down] format error in \"data_rate\" (%s), invalid SF, TX aborted\n",lora->data_rate);
+				return;
+			}
+			switch (x1) {
+			    case 125: txpkt.bandwidth = BW_125KHZ; break;
+			    case 250: txpkt.bandwidth = BW_250KHZ; break;
+			    case 500: txpkt.bandwidth = BW_500KHZ; break;
+			    default:
+				MSG("WARNING: [down] format error in \"data_rate\" (%s), invalid BW, TX aborted\n",lora->data_rate);
+				return;
+			}
+			if      (strcmp(lora->coding_rate, "4/5") == 0) txpkt.coderate = CR_LORA_4_5;
+			else if (strcmp(lora->coding_rate, "4/6") == 0) txpkt.coderate = CR_LORA_4_6;
+			else if (strcmp(lora->coding_rate, "2/3") == 0) txpkt.coderate = CR_LORA_4_6;
+			else if (strcmp(lora->coding_rate, "4/7") == 0) txpkt.coderate = CR_LORA_4_7;
+			else if (strcmp(lora->coding_rate, "4/8") == 0) txpkt.coderate = CR_LORA_4_8;
+			else if (strcmp(lora->coding_rate, "1/2") == 0) txpkt.coderate = CR_LORA_4_8;
+			else {
+			    MSG("WARNING: [down] format error in \"coding_rate\" (%s), TX aborted\n",lora->coding_rate);
+			    return;
+			} 
+			txpkt.invert_pol = gtw->polarization_inversion;
+			txpkt.preamble = (uint16_t)STD_LORA_PREAMB;
+		    } else if (lora->modulation == LORAWAN__MODULATION__FSK) {
+			txpkt.modulation = MOD_FSK;
+			if (!lora->has_bit_rate) {
+			    MSG("WARNING: [down] Mandatory bitrate missing\n");
+			    return;
+			}
+			txpkt.datarate = lora->bit_rate;
+			if (!gtw->has_frequency_deviation) {
+			    MSG("WARNING: [down] Mandatory frequency deviation missing\n");
+			    return;
+			}
+			txpkt.f_dev = gtw->frequency_deviation;
+			txpkt.preamble = (uint16_t)STD_FSK_PREAMB;
+		    } else {
+			MSG("WARNING: [down] unsupported modulation\n");
 			return;
 		    }
-		    switch (x0) {
-			case  7: txpkt.datarate = DR_LORA_SF7;  break;
-			case  8: txpkt.datarate = DR_LORA_SF8;  break;
-			case  9: txpkt.datarate = DR_LORA_SF9;  break;
-			case 10: txpkt.datarate = DR_LORA_SF10; break;
-			case 11: txpkt.datarate = DR_LORA_SF11; break;
-			case 12: txpkt.datarate = DR_LORA_SF12; break;
-			default:
-			    MSG("WARNING: [down] format error in \"data_rate\" (%s), invalid SF, TX aborted\n",lora->data_rate);
-			    return;
-		    }
-		    switch (x1) {
-			case 125: txpkt.bandwidth = BW_125KHZ; break;
-			case 250: txpkt.bandwidth = BW_250KHZ; break;
-			case 500: txpkt.bandwidth = BW_500KHZ; break;
-			default:
-			    MSG("WARNING: [down] format error in \"data_rate\" (%s), invalid BW, TX aborted\n",lora->data_rate);
-			    return;
-		    }
-		    if      (strcmp(lora->coding_rate, "4/5") == 0) txpkt.coderate = CR_LORA_4_5;
-		    else if (strcmp(lora->coding_rate, "4/6") == 0) txpkt.coderate = CR_LORA_4_6;
-		    else if (strcmp(lora->coding_rate, "2/3") == 0) txpkt.coderate = CR_LORA_4_6;
-		    else if (strcmp(lora->coding_rate, "4/7") == 0) txpkt.coderate = CR_LORA_4_7;
-		    else if (strcmp(lora->coding_rate, "4/8") == 0) txpkt.coderate = CR_LORA_4_8;
-		    else if (strcmp(lora->coding_rate, "1/2") == 0) txpkt.coderate = CR_LORA_4_8;
-		    else {
-			MSG("WARNING: [down] format error in \"coding_rate\" (%s), TX aborted\n",lora->coding_rate);
-			return;
-		    } 
-		    txpkt.invert_pol = gtw->polarization_inversion;
-		    txpkt.preamble = (uint16_t)STD_LORA_PREAMB;
+
 		    txpkt.size = msg->payload.len;
 		    memcpy(txpkt.payload, msg->payload.data, txpkt.size < sizeof txpkt.payload ? txpkt.size : sizeof txpkt.payload);
-
 		    /* select TX mode */
 		    if (sent_immediate) {
 			txpkt.tx_mode = IMMEDIATE;
@@ -213,7 +228,7 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 				case JIT_ERROR_COLLISION_BEACON:
 				    increment_down(TX_REJ_COLL_BEACON);
 				    break;
-			    	default:
+				default:
 				    break;
 			    }
 			    MSG("ERROR: [down] Packet REJECTED (jit error=%d %s)\n", jit_result,jit_error(jit_result));
@@ -326,6 +341,9 @@ void ttn_upstream(void *pic) {
     int err;
     uint32_t mote_addr = 0;
     time_t system_time;
+    struct timespec pkt_utc_time;
+    struct tref local_ref;
+    bool ref_ok = false;
     Queue *entry;
 
     while (!exit_sig && !quit_sig) {
@@ -347,12 +365,21 @@ void ttn_upstream(void *pic) {
 	servers[idx].queue = entry->next;
 	pthread_mutex_unlock(&mx_queues);
 
+	if (gps_active == true) {
+	    pthread_mutex_lock(&mx_timeref);
+	    ref_ok = gps_ref_valid;
+	    local_ref = time_reference_gps;
+	    pthread_mutex_unlock(&mx_timeref);
+	} else {
+	    ref_ok = false;
+	}
+
 	rxpkt = entry->data;
 	for (i=0; i < entry->nbpkt; ++i) {
 	    p = &rxpkt[i];
 
-	    // Skip any packet received where modulation is not LoRa for now
-	    if (p->modulation != MOD_LORA) {
+	    // Skip any packet received where modulation is not LoRa or FSK
+	    if (p->modulation != MOD_LORA && p->modulation != MOD_FSK) {
 		continue;
 	    }
 
@@ -383,80 +410,87 @@ void ttn_upstream(void *pic) {
 
 	    // Set protocol metadata
 	    Protocol__RxMetadata protocol = PROTOCOL__RX_METADATA__INIT;
-	    protocol.protocol_case = PROTOCOL__RX_METADATA__PROTOCOL_LORAWAN;
 	    Lorawan__Metadata lorawan = LORAWAN__METADATA__INIT;
+	    Gateway__RxMetadata gateway = GATEWAY__RX_METADATA__INIT;
+	    protocol.protocol_case = PROTOCOL__RX_METADATA__PROTOCOL_LORAWAN;
+
 	    lorawan.has_modulation = 1;
-	    lorawan.modulation = LORAWAN__MODULATION__LORA;
+	    if (p->modulation == MOD_LORA) {
+		lorawan.modulation = LORAWAN__MODULATION__LORA;
 
-	    switch (p->datarate) {
-		case DR_LORA_SF7:
-		    datarate="SF7";
-		    break;
-		case DR_LORA_SF8:
-		    datarate="SF8";
-		    break;
-		case DR_LORA_SF9:
-		    datarate="SF9";
-		    break;
-		case DR_LORA_SF10:
-		    datarate="SF10";
-		    break;
-		case DR_LORA_SF11:
-		    datarate="SF11";
-		    break;
-		case DR_LORA_SF12:
-		    datarate="SF12";
-		    break;
-		default:
-		    continue; /* skip that packet*/
-	    }
-	    switch (p->bandwidth) {
-		case BW_125KHZ:
-		    bandwidth="BW125";
-		    break;
-		case BW_250KHZ:
-		    bandwidth="BW250";
-		    break;
-		case BW_500KHZ:
-		    bandwidth="BW500";
-		    break;
-		default:
-		    MSG("ERROR: [up] TTN lora packet with unknown bandwidth\n");
-		    continue; /* skip that packet*/
-	    }
-	    sprintf(dbbuf,"%s%s",datarate,bandwidth);
-	    lorawan.data_rate = dbbuf;
+		switch (p->datarate) {
+		    case DR_LORA_SF7:
+			datarate="SF7";
+			break;
+		    case DR_LORA_SF8:
+			datarate="SF8";
+			break;
+		    case DR_LORA_SF9:
+			datarate="SF9";
+			break;
+		    case DR_LORA_SF10:
+			datarate="SF10";
+			break;
+		    case DR_LORA_SF11:
+			datarate="SF11";
+			break;
+		    case DR_LORA_SF12:
+			datarate="SF12";
+			break;
+		    default:
+			continue; /* skip that packet*/
+		}
+		switch (p->bandwidth) {
+		    case BW_125KHZ:
+			bandwidth="BW125";
+			break;
+		    case BW_250KHZ:
+			bandwidth="BW250";
+			break;
+		    case BW_500KHZ:
+			bandwidth="BW500";
+			break;
+		    default:
+			MSG("ERROR: [up] TTN lora packet with unknown bandwidth\n");
+			continue; /* skip that packet*/
+		}
+		sprintf(dbbuf,"%s%s",datarate,bandwidth);
+		lorawan.data_rate = dbbuf;
 
-	    /* Packet ECC coding rate, 11-13 useful chars */
-	    switch (p->coderate) {
-		case CR_LORA_4_5:
-		    lorawan.coding_rate="4/5";
-		    break;
-		case CR_LORA_4_6:
-		    lorawan.coding_rate="4/6";
-		    break;
-		case CR_LORA_4_7:
-		    lorawan.coding_rate="4/7";
-		    break;
-		case CR_LORA_4_8:
-		    lorawan.coding_rate="4/8";
-		    break;
-		case 0: /* treat the CR0 case (mostly false sync) */
-		    lorawan.coding_rate="OFF";
-		    break;
-		default:
-		    MSG("ERROR: [up] TTN lora packet with unknown coderate\n");
-		    continue; /* skip that packet*/
+		/* Packet ECC coding rate, 11-13 useful chars */
+		switch (p->coderate) {
+		    case CR_LORA_4_5:
+			lorawan.coding_rate="4/5";
+			break;
+		    case CR_LORA_4_6:
+			lorawan.coding_rate="4/6";
+			break;
+		    case CR_LORA_4_7:
+			lorawan.coding_rate="4/7";
+			break;
+		    case CR_LORA_4_8:
+			lorawan.coding_rate="4/8";
+			break;
+		    case 0: /* treat the CR0 case (mostly false sync) */
+			lorawan.coding_rate="OFF";
+			break;
+		    default:
+			MSG("ERROR: [up] TTN lora packet with unknown coderate\n");
+			continue; /* skip that packet*/
+		}
+		lorawan.has_f_cnt = 1;
+		lorawan.f_cnt = p->payload[6] | p->payload[7] << 8;
+
+		gateway.has_snr = 1;
+		gateway.snr = p->snr;
+	    } else if (p->modulation == MOD_FSK) {
+		lorawan.modulation = LORAWAN__MODULATION__FSK;
+	    	lorawan.has_bit_rate = 1;
+		lorawan.bit_rate = p->datarate;
 	    }
-	    lorawan.has_f_cnt = 1;
-	    lorawan.f_cnt = p->payload[6] | p->payload[7] << 8;
+
 	    protocol.lorawan = &lorawan;
 	    up.protocol_metadata = &protocol;
-
-	    system_time = time(NULL);
-
-	    // Set gateway metadata
-	    Gateway__RxMetadata gateway = GATEWAY__RX_METADATA__INIT;
 	    gateway.has_timestamp = 1;
 	    gateway.timestamp = p->count_us;
 	    gateway.has_rf_chain = 1;
@@ -467,12 +501,19 @@ void ttn_upstream(void *pic) {
 	    gateway.frequency = p->freq_hz;
 	    gateway.has_rssi = 1;
 	    gateway.rssi = p->rssi;
-	    gateway.has_snr = 1;
-	    gateway.snr = p->snr;
 	    gateway.has_time = 1;
-	    gateway.time = ((uint64_t) system_time) * 1000000000;
+	    if (ref_ok == true) {
+	    	if (lgw_cnt2utc(local_ref,p->count_us, &pkt_utc_time) == LGW_GPS_SUCCESS) {
+		    gateway.time = pkt_utc_time.tv_sec * 1000000000 + pkt_utc_time.tv_nsec;
+		} else {
+		    system_time = time(NULL);
+		    gateway.time = ((uint64_t) system_time) * 1000000000;
+		}
+	    } else {
+		system_time = time(NULL);
+		gateway.time = ((uint64_t) system_time) * 1000000000;
+	    }
 	    up.gateway_metadata = &gateway;
-
 
 	    // send message uplink
 	    err = ttngwc_send_uplink(servers[idx].ttn, &up);
@@ -501,6 +542,7 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
     static uint32_t tx_ok_tot = 0;
     static uint32_t rx_in_tot = 0;
     static uint32_t rx_ok_tot = 0;
+    struct timespec pkt_utc_time;
 
     // do not try to send if not connected
     if (servers[idx].live == false) return;
@@ -518,7 +560,17 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
     get_concentrator_time(&current_concentrator_time, current_unix_time);
     status.timestamp = current_concentrator_time.tv_sec * 1000000UL + current_concentrator_time.tv_usec;
     status.has_time = 1;
-    status.time = ((uint64_t)time(NULL)) * 1000000000;
+    pthread_mutex_lock(&mx_timeref);
+    if (gps_ref_valid == true) {
+	if (lgw_cnt2utc(time_reference_gps,0, &pkt_utc_time) == LGW_GPS_SUCCESS) {
+	    status.time = pkt_utc_time.tv_sec * 1000000000 + pkt_utc_time.tv_nsec;
+	} else {
+	    status.time = ((uint64_t)time(NULL)) * 1000000000;
+	}
+    } else {
+	status.time = ((uint64_t)time(NULL)) * 1000000000;
+    }
+    pthread_mutex_unlock(&mx_timeref);
     status.platform = platform;
     status.contact_email = email;
     status.description = description;

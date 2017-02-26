@@ -1,4 +1,3 @@
 Todo list for release:
 - cleanup statistics
-- Implement FSK down in TTN transport
 - Write build instructions, required due to dependencies
