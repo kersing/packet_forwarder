@@ -583,6 +583,7 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
     status.has_tx_ok = 1;
     status.tx_ok = tx_ok_tot;
 
+#ifdef MTECH
     // Get gateway temperature if available
     if (temp_available >= 0) {
 	if (temp_available > 0 || access("/sys/class/hwmon/hwmon0/device/temp1_input",R_OK) == 0) {
@@ -595,6 +596,20 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
 	    temp_available = 1;
 	}
     }
+#endif
+#ifdef RPI
+    if (temp_available >= 0) {
+	if (temp_available > 0 || access("/sys/class/thermal/thermal_zone0/temp",R_OK) == 0) {
+	    char buffer[20];
+	    int fd = open("/sys/class/thermal/thermal_zone0/temp",0);
+	    if (fd >=0 && read(fd,buffer,10) > 4) {
+		osmetrics.has_temperature = 1;
+		osmetrics.temperature= atoi(buffer) / 1000.0;
+	    }
+	    temp_available = 1;
+	}
+    }
+#endif
 
     // Get gateway hardware statistics
     if (getloadavg(load, 3) == 3 && sysinfo(&sys) == 0) {

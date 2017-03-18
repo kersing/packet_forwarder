@@ -23,7 +23,6 @@ CC := $(CROSS_COMPILE)gcc
 AR := $(CROSS_COMPILE)ar
 
 CFLAGS := -O2 -Wall -Wextra -Iinc -I.
-#CFLAGS := -O2 -Wall -Wextra -std=c99 -Iinc -I.
 VFLAG := -D VERSION_STRING="\"$(RELEASE_VERSION)\""
 
 ### Constants for Lora concentrator HAL library
@@ -39,6 +38,16 @@ LGW_INC += $(LGW_PATH)/inc/loragw_gps.h
 
 TTN_INC := -I../../ttn-gateway-connector/src -I../../ttn-gateway-connector/src/github.com/gogo/protobuf/protobuf -I../../ttn-gateway-connector/src/github.com/TheThingsNetwork -I../../protobuf-c
 ### Linking options
+
+ifeq ($(PLATFORM),MultiTech)
+  CFLAGS += -DMTECH
+endif
+ifeq ($(PLATFORM),imst_rpi)
+  CFLAGS += -DRPI
+endif
+ifeq ($(PLATFORM),linklabs_blowfish_rpi)
+  CFLAGS += -DRPI
+endif
 
 ifeq ($(CFG_SPI),native)
   LIBS := -lloragw -lrt -lpthread -lm
@@ -58,7 +67,6 @@ else
     $(error [error] Can't find configuration for SPI phy)
   endif
 endif
-#LIBS += -L../../paho.mqtt.embedded-c/build/output -lpaho-embed-mqtt3c -L../../protobuf-c/bin -lprotobuf-c -L../../ttn-gateway-connector/bin -lttn-gateway-connector
 LIBS += -L../../paho.mqtt.embedded-c/build/output -lpaho-embed-mqtt3c -L../../ttn-gateway-connector/bin -lttn-gateway-connector -L../../protobuf-c/bin -lprotobuf-c
 
 ### General build targets
