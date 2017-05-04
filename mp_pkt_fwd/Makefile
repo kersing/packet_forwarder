@@ -39,11 +39,15 @@ LGW_INC += $(LGW_PATH)/inc/loragw_gps.h
 TTN_INC := -I../../ttn-gateway-connector/src -I../../ttn-gateway-connector/src/github.com/gogo/protobuf/protobuf -I../../ttn-gateway-connector/src/github.com/TheThingsNetwork -I../../protobuf-c
 ### Linking options
 
+LIBS:=
+
 ifeq ($(PLATFORM),multitech)
   CFLAGS += -DMTECH
+  LIBS += -lgcc_s
 endif
 ifeq ($(PLATFORM),multitech_spi)
   CFLAGS += -DMTECH
+  LIBS += -lgcc_s
 endif
 ifeq ($(PLATFORM),imst_rpi)
   CFLAGS += -DRPI
@@ -53,19 +57,19 @@ ifeq ($(PLATFORM),linklabs_blowfish_rpi)
 endif
 
 ifeq ($(CFG_SPI),native)
-  LIBS := -lloragw -lrt -lpthread -lm
+  LIBS += -lloragw -lrt -lpthread -lm
 else ifeq ($(CFG_SPI),ftdi)
-  LIBS := -lloragw -lrt -lpthread -lmpsse -lm -lusb-1.0
+  LIBS += -lloragw -lrt -lpthread -lmpsse -lm -lusb-1.0
 else ifeq ($(CFG_SPI),mac)
-    LIBS := -lloragw -lpthread -lmpsse -lm
+    LIBS += -lloragw -lpthread -lmpsse -lm
 else
   # keep compatibility with SX1301 HAL version 1.2.x and bellow
   ifeq ($(LGW_PHY),native)
-    LIBS := -lloragw -lrt -lpthread -lm
+    LIBS += -lloragw -lrt -lpthread -lm
   else ifeq ($(LGW_PHY),ftdi)
-    LIBS := -lloragw -lrt -lpthread -lmpsse -lm
+    LIBS += -lloragw -lrt -lpthread -lmpsse -lm
   else ifeq ($(LGW_PHY),mac)
-    LIBS := -lloragw -lpthread -lmpsse -lm
+    LIBS += -lloragw -lpthread -lmpsse -lm
   else
     $(error [error] Can't find configuration for SPI phy)
   endif
