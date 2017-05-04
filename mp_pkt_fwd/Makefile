@@ -39,7 +39,10 @@ LGW_INC += $(LGW_PATH)/inc/loragw_gps.h
 TTN_INC := -I../../ttn-gateway-connector/src -I../../ttn-gateway-connector/src/github.com/gogo/protobuf/protobuf -I../../ttn-gateway-connector/src/github.com/TheThingsNetwork -I../../protobuf-c
 ### Linking options
 
-ifeq ($(PLATFORM),MultiTech)
+ifeq ($(PLATFORM),multitech)
+  CFLAGS += -DMTECH
+endif
+ifeq ($(PLATFORM),multitech_spi)
   CFLAGS += -DMTECH
 endif
 ifeq ($(PLATFORM),imst_rpi)

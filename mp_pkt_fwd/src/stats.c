@@ -1,7 +1,7 @@
 /*
  * stats.c - provide statistics
  *
- * Written by Jac
+ * Refactor by Jac
  */
 
 #include <stdint.h>         /* C99 types */

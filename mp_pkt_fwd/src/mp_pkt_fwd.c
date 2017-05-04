@@ -1672,6 +1672,7 @@ void thread_gps(void) {
     /* variables for PPM pulse GPS synchronization */
     enum gps_msg latest_msg; /* keep track of latest NMEA message parsed */
     struct timespec utc_time; /* UTC time associated with PPS pulse */
+    struct timespec gps_time;
     uint32_t trig_tstamp; /* concentrator timestamp associated with PPM pulse */
 
     /* position variable */
@@ -1699,7 +1700,7 @@ void thread_gps(void) {
         if (latest_msg == NMEA_RMC) { /* trigger sync only on RMC frames */
 
             /* get UTC time for synchronization */
-            i = lgw_gps_get(&utc_time, NULL, NULL);
+            i = lgw_gps_get(&utc_time, &gps_time, NULL, NULL);
             if (i != LGW_GPS_SUCCESS) {
             	LOGGER("WARNING: [gps] could not get UTC time from GPS\n");
                 continue;
@@ -1716,7 +1717,7 @@ void thread_gps(void) {
 
             /* try to update time reference with the new UTC & timestamp */
             pthread_mutex_lock(&mx_timeref);
-            i = lgw_gps_sync(&time_reference_gps, trig_tstamp, utc_time);
+            i = lgw_gps_sync(&time_reference_gps, trig_tstamp, utc_time, gps_time);
             pthread_mutex_unlock(&mx_timeref);
             if (i != LGW_GPS_SUCCESS) {
             	LOGGER("WARNING: [gps] GPS out of sync, keeping previous time reference\n");
@@ -1724,7 +1725,7 @@ void thread_gps(void) {
             }
 
             /* update gateway coordinates */
-            i = lgw_gps_get(NULL, &coord, &gpserr);
+            i = lgw_gps_get(NULL, NULL, &coord, &gpserr);
             pthread_mutex_lock(&mx_meas_gps);
             if (i == LGW_GPS_SUCCESS) {
                 gps_coord_valid = true;
