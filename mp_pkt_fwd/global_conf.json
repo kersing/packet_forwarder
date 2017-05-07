@@ -1,17 +1,8 @@
 {
     "SX1301_conf": {
         "lorawan_public": true,
-        "clksrc": 1, /* radio_1 provides clock to concentrator for most devices except MultiTech */
-	/* "clksrc": 0, radio_0 provides clock to concentrator for MultiTech */
-        "lbt_cfg": {
-            "enable": false,
-            "rssi_target": 160, /* rssi in dBm = -lbt_rssi_target/2 */
-            "nb_channel": 1,
-            "start_freq": 869525000,
-            "scan_time_us": 5000,
-            "tx_delay_1ch_us": 4000000,
-            "tx_delay_2ch_us": 4000000
-        },
+        /* "clksrc": 1, radio_1 provides clock to concentrator for most devices except MultiTech */
+	"clksrc": 0, /* radio_0 provides clock to concentrator for MultiTech */
         "antenna_gain": 0, /* antenna gain, in dBi */
         "radio_0": {
             "enable": true,
