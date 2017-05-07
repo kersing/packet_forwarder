@@ -4,11 +4,8 @@ The Things Network Multi Protocol Packet Forwarder
 Forked from devlaams Poly Packet Forwarder, reworked to include
 The Things Network gateway-connector protocol.
 
-THIS VERSION IS BETA SOFTWARE WHICH HAS NOT EXTENSIVELY BEEN TESTED YET!
-
 For build instructions see mp_pkt_fwd/build.txt
 Tested on kerlink, MultiTech, lorank, RPi with iC880.
-
 
 Forked from Semtech''s Lora network packet forwarder project. See original description below.
 
