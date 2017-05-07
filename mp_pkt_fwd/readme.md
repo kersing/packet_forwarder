@@ -5,7 +5,7 @@
 	(______/|_____)_|_|_| \__)_____)\____)_| |_|
 	  (C)2013 Semtech-Cycleo
 	  (C)2015 Modfications by Ruud Vlaming (The Things Network)
-          (C)2017 Modification by Jac Kersing
+	  (C)2017 Modification by Jac Kersing
 
 Lora Gateway packet forwarder with multiple extensions
 ======================================================
@@ -13,10 +13,10 @@ Lora Gateway packet forwarder with multiple extensions
 1. Introduction
 ----------------
 
-The poly packet forwarder is a program running on the host of a Lora 
-Gateway that forward RF packets receive by the concentrator to a server 
-through a IP/UDP link, and emits RF packets that are sent by the server. 
-It is an 
+The multi protocol  packet forwarder is a program running on the host 
+of a Lora Gateway that forward RF packets receive by the concentrator 
+to a server through a IP/UDP or IP/TCP link, and emits RF packets that 
+are sent by the server. 
 
 It allows for the injection of virtual radio packets for testing and
 is capable of communication with multiple servers. It is based on the
@@ -24,8 +24,10 @@ beacon_packet_forwarder with that distinction the operator has
 detailed control over all capabilities. So beacon, gps, injection,
 up/down stream, all can be (de)activated by modifying the json.
 
-To learn more about the network protocol between the gateway and the server, 
+To learn more about the IP/UDP network protocol between the gateway and the server, 
 please read the PROTOCOL.TXT document.
+For the IP/TCP network protocol please consult the information available at
+https://github.com/TheThingsNetwork/ttn-gateway-connector
 
 2. System schematic and definitions
 ------------------------------------
