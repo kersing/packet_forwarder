@@ -5,13 +5,10 @@
 	(______/|_____)_|_|_| \__)_____)\____)_| |_|
 	  (C)2013 Semtech-Cycleo
 	  (C)2015 Modfications by Ruud Vlaming (The Things Network)
+          (C)2017 Modification by Jac Kersing
 
 Lora Gateway packet forwarder with multiple extensions
 ======================================================
-
-WARNING: 
-  Bleeding edge work. Code not yet properly tested, will most likely 
-  fail directly afer startup.  
 
 1. Introduction
 ----------------
