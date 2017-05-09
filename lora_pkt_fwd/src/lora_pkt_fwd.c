@@ -2530,8 +2530,8 @@ void thread_gps(void) {
             }
 
             /* update gateway coordinates */
-            i = lgw_gps_get(NULL, &coord, &gpserr);
             pthread_mutex_lock(&mx_meas_gps);
+            i = lgw_gps_get(NULL, &coord, &gpserr);
             if (i == LGW_GPS_SUCCESS) {
                 gps_coord_valid = true;
                 meas_gps_coord = coord;
