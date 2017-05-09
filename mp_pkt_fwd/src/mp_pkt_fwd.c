@@ -7,12 +7,12 @@
   (C)2013 Semtech-Cycleo
 
 Description:
-	Configure Lora concentrator and forward packets to multiple servers
+    Configure Lora concentrator and forward packets to multiple servers
     Use GPS for packet timestamping.
     Send a becon at a regular interval without server intervention
-	Processes ghost packets
-	Switchable tasks.
-	Suited for compilation on OSX
+    Processes ghost packets
+    Switchable tasks.
+    Suited for compilation on OSX
 
 License: Revised BSD License, see LICENSE.TXT file include in the project
 Maintainer: Michael Coracin
@@ -249,8 +249,8 @@ char description[64] = "";                /* used for free form description */
 
 #ifdef __MACH__
 int clock_gettime(int clk_id, struct timespec* t) {
-	(void) clk_id;
-	struct timeval now;
+    (void) clk_id;
+    struct timeval now;
     int rv = gettimeofday(&now, NULL);
     if (rv) return rv;
     t->tv_sec  = now.tv_sec;
@@ -669,17 +669,17 @@ static int parse_gateway_configuration(const char * conf_file) {
     JSON_Value *root_val;
     JSON_Object *conf_obj = NULL;
     JSON_Value *val = NULL; /* needed to detect the absence of some fields */
-	JSON_Value *val1 = NULL; /* needed to detect the absence of some fields */
-	JSON_Value *val2 = NULL; /* needed to detect the absence of some fields */
-	JSON_Value *val3 = NULL; /* needed to detect the absence of some fields */
-	JSON_Value *val4 = NULL; /* needed to detect the absence of some fields */
-	JSON_Value *val5 = NULL; /* needed to detect the absence of some fields */
-	JSON_Array *confservers = NULL;
-	JSON_Array *syscalls = NULL;
+    JSON_Value *val1 = NULL; /* needed to detect the absence of some fields */
+    JSON_Value *val2 = NULL; /* needed to detect the absence of some fields */
+    JSON_Value *val3 = NULL; /* needed to detect the absence of some fields */
+    JSON_Value *val4 = NULL; /* needed to detect the absence of some fields */
+    JSON_Value *val5 = NULL; /* needed to detect the absence of some fields */
+    JSON_Array *confservers = NULL;
+    JSON_Array *syscalls = NULL;
     const char *str; /* pointer to sub-strings in the JSON data */
     unsigned long long ull = 0;
-	int i; /* Loop variable */
-	int ic; /* Server counter */
+    int i; /* Loop variable */
+    int ic; /* Server counter */
 
     /* try to parse JSON */
     root_val = json_parse_file_with_comments(conf_file);
@@ -700,201 +700,201 @@ static int parse_gateway_configuration(const char * conf_file) {
     /* gateway unique identifier (aka MAC address) (optional) */
     str = json_object_get_string(conf_obj, "gateway_ID");
     if (str != NULL) {
-    	snprintf(gateway_id, sizeof gateway_id, "%s",str);
+        snprintf(gateway_id, sizeof gateway_id, "%s",str);
         sscanf(str, "%llx", &ull);
         lgwm = ull;
         MSG("INFO: gateway MAC address is configured to %016llX\n", ull);
     }
 
-	/* Obtain multiple servers hostnames and ports from array */
-	JSON_Object *nw_server = NULL;
-	confservers = json_object_get_array(conf_obj, "servers");
-	if (confservers != NULL) {
-		/* serv_count represents the maximal number of servers to be read. */
-		serv_count = json_array_get_count(confservers);
-		MSG("INFO: Found %i servers in array.\n", serv_count);
-		ic = 0;
-		for (i = 0; i < serv_count  && ic < MAX_SERVERS; i++) {
-			const char *vtype = NULL, *vgwid = NULL, *vgwkey = NULL;
-			nw_server = json_array_get_object(confservers,i);
-			str = json_object_get_string(nw_server, "server_address");
-			val = json_object_get_value(nw_server, "serv_enabled");
-			val1 = json_object_get_value(nw_server, "serv_port_up");
-			val2 = json_object_get_value(nw_server, "serv_port_down");
-			val3 = json_object_get_value(nw_server, "serv_max_stall");
-			val4 = json_object_get_value(nw_server, "serv_up_enabled");
-			val5 = json_object_get_value(nw_server, "serv_down_enabled");
-			vtype = json_object_get_string(nw_server, "serv_type");
-			vgwid = json_object_get_string(nw_server, "serv_gw_id");
-			vgwkey = json_object_get_string(nw_server, "serv_gw_key");
+    /* Obtain multiple servers hostnames and ports from array */
+    JSON_Object *nw_server = NULL;
+    confservers = json_object_get_array(conf_obj, "servers");
+    if (confservers != NULL) {
+        /* serv_count represents the maximal number of servers to be read. */
+        serv_count = json_array_get_count(confservers);
+        MSG("INFO: Found %i servers in array.\n", serv_count);
+        ic = 0;
+        for (i = 0; i < serv_count  && ic < MAX_SERVERS; i++) {
+            const char *vtype = NULL, *vgwid = NULL, *vgwkey = NULL;
+            nw_server = json_array_get_object(confservers,i);
+            str = json_object_get_string(nw_server, "server_address");
+            val = json_object_get_value(nw_server, "serv_enabled");
+            val1 = json_object_get_value(nw_server, "serv_port_up");
+            val2 = json_object_get_value(nw_server, "serv_port_down");
+            val3 = json_object_get_value(nw_server, "serv_max_stall");
+            val4 = json_object_get_value(nw_server, "serv_up_enabled");
+            val5 = json_object_get_value(nw_server, "serv_down_enabled");
+            vtype = json_object_get_string(nw_server, "serv_type");
+            vgwid = json_object_get_string(nw_server, "serv_gw_id");
+            vgwkey = json_object_get_string(nw_server, "serv_gw_key");
 
-			/* Try to read the fields */
-			if (str != NULL)  snprintf(servers[ic].addr, sizeof servers[ic].addr, "%s",str);
-			if (val1 != NULL) snprintf(servers[ic].port_up, sizeof servers[ic].port_up, "%u", (uint16_t)json_value_get_number(val1));
-			if (val2 != NULL) snprintf(servers[ic].port_down, sizeof servers[ic].port_down, "%u", (uint16_t)json_value_get_number(val2));
-			if (val3 != NULL) servers[ic].max_stall = (int) json_value_get_number(val3); else servers[ic].max_stall = 0;
-			if (val4 != NULL) servers[ic].upstream = (bool) json_value_get_boolean(val4); 
-			if (val5 != NULL) servers[ic].downstream = (bool) json_value_get_boolean(val5); 
-			/* If there is no server name we can only silently progress to the next entry */
-			if (str == NULL) {
-				continue;
-			} else if (vtype != NULL) {
-				if (!strncmp(vtype,"semtech",7)) {
-					servers[ic].type = semtech;
-				}
-				else if (!strncmp(vtype,"ttn",3)) {
-					servers[ic].type = ttn_gw_bridge;
-				}
-				else {
-					MSG("INFO: Skipping server \"%s\" with invalid server type\n", servers[ic].addr);
-					continue;
-				}
-			} else {
-				servers[ic].type = semtech;
-			}
-			/* For semtech protocol, if there are no ports report and progress to the next entry */
-			if (servers[ic].type == semtech && ((val1 == NULL) || (val2 == NULL))) {
-				MSG("INFO: Skipping server \"%s\" with at least one invalid port number\n", servers[ic].addr);
-				continue;
-			}
-			/* For TTN gateway bridge, if there is no gateway id or no gateway key report and progress to next entry */
-			if (servers[ic].type == ttn_gw_bridge) {
-				if (vgwid == NULL) {
-					MSG("INFO: Skipping server \"%s\" due to missing gateway id\n", servers[ic].addr);
-					continue;
-				} else {
-					strncpy(servers[ic].gw_id, vgwid, sizeof servers[ic].gw_id);
-				}
-				if (vgwkey == NULL) {
-					MSG("INFO: Skipping server \"%s\" due to missing gateway key\n", servers[ic].addr);
-					continue;
-				} else {
-					strncpy(servers[ic].gw_key, vgwkey, sizeof servers[ic].gw_key);
-				}
-			}
-		        /* If the server was explicitly disabled, report and progress to the next entry */
-			if ( (val != NULL) && ((json_value_get_type(val)) == JSONBoolean) && ((bool)json_value_get_boolean(val) == false )) {
-				MSG("INFO: Skipping disabled server \"%s\"\n", servers[ic].addr);
-				continue;
-			}
-			
-			/* All test survived, this is a valid server, report and increase server counter. */
-			MSG("INFO: Server %i configured to \"%s\"\n", ic, servers[ic].addr);
-			/* The server may be valid, it is not yet live. */
-			servers[ic].enabled = true;
-			servers[ic].live = false;
-			ic++;
-		}
-		serv_count = ic;
-	} else {
-		/* If there are no servers in server array fall back to old fashioned single server definition.
-		 * The difference with the original situation is that we require a complete definition. */
-	        /* server hostname or IP address (optional) */
-	        str = json_object_get_string(conf_obj, "server_address");
-		val1 = json_object_get_value(conf_obj, "serv_port_up");
-		val2 = json_object_get_value(conf_obj, "serv_port_down");
-		if ((str != NULL) && (val1 != NULL) && (val2 != NULL)) {
-			serv_count = 1;
-			servers[0].live = false;
-			strncpy(servers[0].addr, str, sizeof servers[0].addr);
-			snprintf(servers[0].port_up, sizeof servers[0].port_up, "%u", (uint16_t)json_value_get_number(val1));
-			snprintf(servers[0].port_down, sizeof servers[0].port_down, "%u", (uint16_t)json_value_get_number(val2));
-			MSG("INFO: Server configured to \"%s\", with port up \"%s\" and port down \"%s\"\n", servers[0].addr, servers[0].port_up, servers[0].port_down);
-		}
-	}
+            /* Try to read the fields */
+            if (str != NULL)  snprintf(servers[ic].addr, sizeof servers[ic].addr, "%s",str);
+            if (val1 != NULL) snprintf(servers[ic].port_up, sizeof servers[ic].port_up, "%u", (uint16_t)json_value_get_number(val1));
+            if (val2 != NULL) snprintf(servers[ic].port_down, sizeof servers[ic].port_down, "%u", (uint16_t)json_value_get_number(val2));
+            if (val3 != NULL) servers[ic].max_stall = (int) json_value_get_number(val3); else servers[ic].max_stall = 0;
+            if (val4 != NULL) servers[ic].upstream = (bool) json_value_get_boolean(val4); 
+            if (val5 != NULL) servers[ic].downstream = (bool) json_value_get_boolean(val5); 
+            /* If there is no server name we can only silently progress to the next entry */
+            if (str == NULL) {
+                continue;
+            } else if (vtype != NULL) {
+                if (!strncmp(vtype,"semtech",7)) {
+                    servers[ic].type = semtech;
+                }
+                else if (!strncmp(vtype,"ttn",3)) {
+                    servers[ic].type = ttn_gw_bridge;
+                }
+                else {
+                    MSG("INFO: Skipping server \"%s\" with invalid server type\n", servers[ic].addr);
+                    continue;
+                }
+            } else {
+                servers[ic].type = semtech;
+            }
+            /* For semtech protocol, if there are no ports report and progress to the next entry */
+            if (servers[ic].type == semtech && ((val1 == NULL) || (val2 == NULL))) {
+                MSG("INFO: Skipping server \"%s\" with at least one invalid port number\n", servers[ic].addr);
+                continue;
+            }
+            /* For TTN gateway bridge, if there is no gateway id or no gateway key report and progress to next entry */
+            if (servers[ic].type == ttn_gw_bridge) {
+                if (vgwid == NULL) {
+                    MSG("INFO: Skipping server \"%s\" due to missing gateway id\n", servers[ic].addr);
+                    continue;
+                } else {
+                    strncpy(servers[ic].gw_id, vgwid, sizeof servers[ic].gw_id);
+                }
+                if (vgwkey == NULL) {
+                    MSG("INFO: Skipping server \"%s\" due to missing gateway key\n", servers[ic].addr);
+                    continue;
+                } else {
+                    strncpy(servers[ic].gw_key, vgwkey, sizeof servers[ic].gw_key);
+                }
+            }
+                /* If the server was explicitly disabled, report and progress to the next entry */
+            if ( (val != NULL) && ((json_value_get_type(val)) == JSONBoolean) && ((bool)json_value_get_boolean(val) == false )) {
+                MSG("INFO: Skipping disabled server \"%s\"\n", servers[ic].addr);
+                continue;
+            }
+            
+            /* All test survived, this is a valid server, report and increase server counter. */
+            MSG("INFO: Server %i configured to \"%s\"\n", ic, servers[ic].addr);
+            /* The server may be valid, it is not yet live. */
+            servers[ic].enabled = true;
+            servers[ic].live = false;
+            ic++;
+        }
+        serv_count = ic;
+    } else {
+        /* If there are no servers in server array fall back to old fashioned single server definition.
+         * The difference with the original situation is that we require a complete definition. */
+            /* server hostname or IP address (optional) */
+            str = json_object_get_string(conf_obj, "server_address");
+        val1 = json_object_get_value(conf_obj, "serv_port_up");
+        val2 = json_object_get_value(conf_obj, "serv_port_down");
+        if ((str != NULL) && (val1 != NULL) && (val2 != NULL)) {
+            serv_count = 1;
+            servers[0].live = false;
+            strncpy(servers[0].addr, str, sizeof servers[0].addr);
+            snprintf(servers[0].port_up, sizeof servers[0].port_up, "%u", (uint16_t)json_value_get_number(val1));
+            snprintf(servers[0].port_down, sizeof servers[0].port_down, "%u", (uint16_t)json_value_get_number(val2));
+            MSG("INFO: Server configured to \"%s\", with port up \"%s\" and port down \"%s\"\n", servers[0].addr, servers[0].port_up, servers[0].port_down);
+        }
+    }
 
-	/* Check for ttn configuration */
-	val = json_object_get_value(conf_obj, "ttn_enable");
-	if (json_value_get_type(val) == JSONBoolean && ((bool)json_value_get_boolean(val) == true)) {
-		const char *id = NULL, *key = NULL, *addr = NULL;
-		/* Read value of ttn_gateway_id */
-		id = json_object_get_string(conf_obj, "ttn_gateway_id");
-		key = json_object_get_string(conf_obj, "ttn_gateway_key");
-		addr = json_object_get_string(conf_obj, "ttn_address");
-		if (id != NULL && key != NULL && addr != NULL) {
-			strncpy(servers[serv_count].addr, addr, sizeof servers[serv_count].addr);
-			strncpy(servers[serv_count].gw_id, id, sizeof servers[serv_count].gw_id);
-			strncpy(servers[serv_count].gw_key, key, sizeof servers[serv_count].gw_key);
-			servers[serv_count].enabled = true;
-			servers[serv_count].live = false;
-			servers[serv_count].type = ttn_gw_bridge;
-			MSG("INFO: TTN address configured to \"%s\"\n", servers[serv_count].addr);
-			serv_count++;
-		}
-	}
+    /* Check for ttn configuration */
+    val = json_object_get_value(conf_obj, "ttn_enable");
+    if (json_value_get_type(val) == JSONBoolean && ((bool)json_value_get_boolean(val) == true)) {
+        const char *id = NULL, *key = NULL, *addr = NULL;
+        /* Read value of ttn_gateway_id */
+        id = json_object_get_string(conf_obj, "ttn_gateway_id");
+        key = json_object_get_string(conf_obj, "ttn_gateway_key");
+        addr = json_object_get_string(conf_obj, "ttn_address");
+        if (id != NULL && key != NULL && addr != NULL) {
+            strncpy(servers[serv_count].addr, addr, sizeof servers[serv_count].addr);
+            strncpy(servers[serv_count].gw_id, id, sizeof servers[serv_count].gw_id);
+            strncpy(servers[serv_count].gw_key, key, sizeof servers[serv_count].gw_key);
+            servers[serv_count].enabled = true;
+            servers[serv_count].live = false;
+            servers[serv_count].type = ttn_gw_bridge;
+            MSG("INFO: TTN address configured to \"%s\"\n", servers[serv_count].addr);
+            serv_count++;
+        }
+    }
 
-	/* Using the defaults in case no values are present in the JSON */
-	//TODO: Eliminate this default behavior, the server should be well configured or stop.
-	if (serv_count == 0) {
-		MSG("INFO: Using defaults for server and ports (specific ports are ignored if no server is defined)");
-		snprintf(servers[0].addr,sizeof(servers[0].addr),STR(DEFAULT_SERVER));
-		snprintf(servers[0].port_up,sizeof(servers[0].port_up),STR(DEFAULT_PORT_UP));
-		snprintf(servers[0].port_down,sizeof(servers[0].port_down),STR(DEFAULT_PORT_DW));
-		servers[0].live = false;
-		serv_count = 1;
-	}
+    /* Using the defaults in case no values are present in the JSON */
+    //TODO: Eliminate this default behavior, the server should be well configured or stop.
+    if (serv_count == 0) {
+        MSG("INFO: Using defaults for server and ports (specific ports are ignored if no server is defined)");
+        snprintf(servers[0].addr,sizeof(servers[0].addr),STR(DEFAULT_SERVER));
+        snprintf(servers[0].port_up,sizeof(servers[0].port_up),STR(DEFAULT_PORT_UP));
+        snprintf(servers[0].port_down,sizeof(servers[0].port_down),STR(DEFAULT_PORT_DW));
+        servers[0].live = false;
+        serv_count = 1;
+    }
 
-	/* Read the system calls for the monitor function. */
-	syscalls = json_object_get_array(conf_obj, "system_calls");
-	if (syscalls != NULL) {
-		/* serv_count represents the maximal number of servers to be read. */
-		mntr_sys_count = json_array_get_count(syscalls);
-		MSG("INFO: Found %i system calls in array.\n", mntr_sys_count);
-		for (i = 0; i < mntr_sys_count  && i < MNTR_SYS_MAX; i++) {
-			str = json_array_get_string(syscalls,i);
-			snprintf(mntr_sys_list[i], sizeof mntr_sys_list[i],"%s",str);
-			MSG("INFO: System command %i: \"%s\"\n",i,mntr_sys_list[i]);
-		}
-	}
+    /* Read the system calls for the monitor function. */
+    syscalls = json_object_get_array(conf_obj, "system_calls");
+    if (syscalls != NULL) {
+        /* serv_count represents the maximal number of servers to be read. */
+        mntr_sys_count = json_array_get_count(syscalls);
+        MSG("INFO: Found %i system calls in array.\n", mntr_sys_count);
+        for (i = 0; i < mntr_sys_count  && i < MNTR_SYS_MAX; i++) {
+            str = json_array_get_string(syscalls,i);
+            snprintf(mntr_sys_list[i], sizeof mntr_sys_list[i],"%s",str);
+            MSG("INFO: System command %i: \"%s\"\n",i,mntr_sys_list[i]);
+        }
+    }
 
-	/* monitor hostname or IP address (optional) */
-	str = json_object_get_string(conf_obj, "monitor_address");
+    /* monitor hostname or IP address (optional) */
+    str = json_object_get_string(conf_obj, "monitor_address");
     if (str != NULL) {
-    	snprintf(monitor_addr, sizeof monitor_addr,"%s",str);
-		MSG("INFO: monitor hostname or IP address is configured to \"%s\"\n", monitor_addr);
+        snprintf(monitor_addr, sizeof monitor_addr,"%s",str);
+        MSG("INFO: monitor hostname or IP address is configured to \"%s\"\n", monitor_addr);
     }
 
-	/* get monitor connection port (optional) */
-	val = json_object_get_value(conf_obj, "monitor_port");
+    /* get monitor connection port (optional) */
+    val = json_object_get_value(conf_obj, "monitor_port");
     if (val != NULL) {
-		snprintf(monitor_port, sizeof monitor_port, "%u", (uint16_t)json_value_get_number(val));
-		MSG("INFO: monitor port is configured to \"%s\"\n", monitor_port);
+        snprintf(monitor_port, sizeof monitor_port, "%u", (uint16_t)json_value_get_number(val));
+        MSG("INFO: monitor port is configured to \"%s\"\n", monitor_port);
     }
 
-	/* ghost hostname or IP address (optional) */
-	str = json_object_get_string(conf_obj, "ghost_address");
-	if (str != NULL) {
-		snprintf(ghost_addr, sizeof ghost_addr,"%s",str);
-		MSG("INFO: ghost hostname or IP address is configured to \"%s\"\n", ghost_addr);
-	}
-
-	/* get ghost connection port (optional) */
-	val = json_object_get_value(conf_obj, "ghost_port");
-    if (val != NULL) {
-		snprintf(ghost_port, sizeof ghost_port, "%u", (uint16_t)json_value_get_number(val));
-		MSG("INFO: ghost port is configured to \"%s\"\n", ghost_port);
+    /* ghost hostname or IP address (optional) */
+    str = json_object_get_string(conf_obj, "ghost_address");
+    if (str != NULL) {
+        snprintf(ghost_addr, sizeof ghost_addr,"%s",str);
+        MSG("INFO: ghost hostname or IP address is configured to \"%s\"\n", ghost_addr);
     }
 
-	/* name of format, currently recognized are semtech and lorank (optional) */
-	str = json_object_get_string(conf_obj, "stat_format");
-	if (str != NULL) {
-		snprintf(stat_format, sizeof stat_format,"%s",str);
-		MSG("INFO: format is configured to \"%s\"\n", stat_format);
-	}
-
-	/* name of file to write statistical info to (optional) */
-	str = json_object_get_string(conf_obj, "stat_file");
-	if (str != NULL) {
-		snprintf(stat_file, sizeof stat_file,"%s",str);
-		MSG("INFO: filename for statistical performance is configured to \"%s\"\n", stat_file);
-	}
-
-	/* get percentage for dampening filter (optional) */
-	val = json_object_get_value(conf_obj, "stat_damping");
+    /* get ghost connection port (optional) */
+    val = json_object_get_value(conf_obj, "ghost_port");
     if (val != NULL) {
-    	stat_damping = (int) json_value_get_number(val);
-    	stat_damping = (stat_damping <= 0) ? 1 : (stat_damping >= 100) ? 99 : stat_damping;
-		MSG("INFO: Damping for statistical info is configured to  %u%%\n", stat_damping);
+        snprintf(ghost_port, sizeof ghost_port, "%u", (uint16_t)json_value_get_number(val));
+        MSG("INFO: ghost port is configured to \"%s\"\n", ghost_port);
+    }
+
+    /* name of format, currently recognized are semtech and lorank (optional) */
+    str = json_object_get_string(conf_obj, "stat_format");
+    if (str != NULL) {
+        snprintf(stat_format, sizeof stat_format,"%s",str);
+        MSG("INFO: format is configured to \"%s\"\n", stat_format);
+    }
+
+    /* name of file to write statistical info to (optional) */
+    str = json_object_get_string(conf_obj, "stat_file");
+    if (str != NULL) {
+        snprintf(stat_file, sizeof stat_file,"%s",str);
+        MSG("INFO: filename for statistical performance is configured to \"%s\"\n", stat_file);
+    }
+
+    /* get percentage for dampening filter (optional) */
+    val = json_object_get_value(conf_obj, "stat_damping");
+    if (val != NULL) {
+        stat_damping = (int) json_value_get_number(val);
+        stat_damping = (stat_damping <= 0) ? 1 : (stat_damping >= 100) ? 99 : stat_damping;
+        MSG("INFO: Damping for statistical info is configured to  %u%%\n", stat_damping);
     }
 
     /* get keep-alive interval (in seconds) for downstream (optional) */
@@ -908,10 +908,10 @@ static int parse_gateway_configuration(const char * conf_file) {
     val = json_object_get_value(conf_obj, "stat_interval");
     if (val != NULL) {
         stat_interval = (unsigned)json_value_get_number(val);
-	/* limit because ttn-gateway-connector will disconnect due to mqtt timeouts */
-	if (stat_interval > 60) {
-		stat_interval = 55;
-	}
+    /* limit because ttn-gateway-connector will disconnect due to mqtt timeouts */
+    if (stat_interval > 60) {
+        stat_interval = 55;
+    }
         MSG("INFO: statistics display interval is configured to %u seconds\n", stat_interval);
     }
 
@@ -942,37 +942,37 @@ static int parse_gateway_configuration(const char * conf_file) {
     /* GPS module TTY path (optional) */
     str = json_object_get_string(conf_obj, "gps_tty_path");
     if (str != NULL) {
-    	snprintf(gps_tty_path, sizeof gps_tty_path,"%s",str);
+        snprintf(gps_tty_path, sizeof gps_tty_path,"%s",str);
         MSG("INFO: GPS serial port path is configured to \"%s\"\n", gps_tty_path);
     }
 
-	/* SSH path (optional) */
-	str = json_object_get_string(conf_obj, "ssh_path");
-	if (str != NULL) {
-		snprintf(ssh_path, sizeof ssh_path,"%s",str);
-		MSG("INFO: SSH path is configured to \"%s\"\n", ssh_path);
-	}
+    /* SSH path (optional) */
+    str = json_object_get_string(conf_obj, "ssh_path");
+    if (str != NULL) {
+        snprintf(ssh_path, sizeof ssh_path,"%s",str);
+        MSG("INFO: SSH path is configured to \"%s\"\n", ssh_path);
+    }
 
-	/* SSH port (optional) */
-	val = json_object_get_value(conf_obj, "ssh_port");
-	if (val != NULL) {
-		ssh_port = (uint16_t) json_value_get_number(val);
-		MSG("INFO: SSH port is configured to %u\n", ssh_port);
-	}
+    /* SSH port (optional) */
+    val = json_object_get_value(conf_obj, "ssh_port");
+    if (val != NULL) {
+        ssh_port = (uint16_t) json_value_get_number(val);
+        MSG("INFO: SSH port is configured to %u\n", ssh_port);
+    }
 
-	/* WEB port (optional) */
-	val = json_object_get_value(conf_obj, "http_port");
-	if (val != NULL) {
-		http_port = (uint16_t) json_value_get_number(val);
-		MSG("INFO: HTTP port is configured to %u\n", http_port);
-	}
+    /* WEB port (optional) */
+    val = json_object_get_value(conf_obj, "http_port");
+    if (val != NULL) {
+        http_port = (uint16_t) json_value_get_number(val);
+        MSG("INFO: HTTP port is configured to %u\n", http_port);
+    }
 
-	/* NGROK path (optional) */
-	str = json_object_get_string(conf_obj, "ngrok_path");
-	if (str != NULL) {
-		snprintf(ngrok_path, sizeof ngrok_path,"%s",str);
-		MSG("INFO: NGROK path is configured to \"%s\"\n", ngrok_path);
-	}
+    /* NGROK path (optional) */
+    str = json_object_get_string(conf_obj, "ngrok_path");
+    if (str != NULL) {
+        snprintf(ngrok_path, sizeof ngrok_path,"%s",str);
+        MSG("INFO: NGROK path is configured to \"%s\"\n", ngrok_path);
+    }
 
     /* get reference coordinates */
     val = json_object_get_value(conf_obj, "ref_latitude");
@@ -991,29 +991,29 @@ static int parse_gateway_configuration(const char * conf_file) {
         MSG("INFO: Reference altitude is configured to %i meters\n", reference_coord.alt);
     }
 
-	/* Read the value for gps_enabled data */
-	val = json_object_get_value(conf_obj, "gps");
-	if (json_value_get_type(val) == JSONBoolean) {
-		gps_enabled = (bool)json_value_get_boolean(val);
-	}
-	if (gps_enabled == true) {
-		MSG("INFO: GPS is enabled\n");
-	} else {
-		MSG("INFO: GPS is disabled\n");
+    /* Read the value for gps_enabled data */
+    val = json_object_get_value(conf_obj, "gps");
+    if (json_value_get_type(val) == JSONBoolean) {
+        gps_enabled = (bool)json_value_get_boolean(val);
+    }
+    if (gps_enabled == true) {
+        MSG("INFO: GPS is enabled\n");
+    } else {
+        MSG("INFO: GPS is disabled\n");
     }
 
-	if (gps_enabled == true) {
+    if (gps_enabled == true) {
     /* Gateway GPS coordinates hardcoding (aka. faking) option */
     val = json_object_get_value(conf_obj, "fake_gps");
     if (json_value_get_type(val) == JSONBoolean) {
         gps_fake_enable = (bool)json_value_get_boolean(val);
         if (gps_fake_enable == true) {
-				MSG("INFO: Using fake GPS coordinates instead of real.\n");
+                MSG("INFO: Using fake GPS coordinates instead of real.\n");
         } else {
-				MSG("INFO: Using real GPS if available.\n");
+                MSG("INFO: Using real GPS if available.\n");
         }
     }
-	}
+    }
 
     /* Beacon signal period (optional) */
     val = json_object_get_value(conf_obj, "beacon_period");
@@ -1029,121 +1029,121 @@ static int parse_gateway_configuration(const char * conf_file) {
         MSG("INFO: Beaconing signal will be emitted at %u Hz\n", beacon_freq_hz);
     }
 
-	/* Read the value for upstream data */
-	val = json_object_get_value(conf_obj, "upstream");
-	if (json_value_get_type(val) == JSONBoolean) {
-		upstream_enabled = (bool)json_value_get_boolean(val);
-	}
-	if (upstream_enabled == true) {
-		MSG("INFO: Upstream data is enabled\n");
-	} else {
-		MSG("INFO: Upstream data is disabled\n");
-	}
-
-	/* Read the value for downstream_enabled data */
-	val = json_object_get_value(conf_obj, "downstream");
-	if (json_value_get_type(val) == JSONBoolean) {
-		downstream_enabled = (bool)json_value_get_boolean(val);
-	}
-	if (downstream_enabled == true) {
-		MSG("INFO: Downstream data is enabled\n");
-	} else {
-		MSG("INFO: Downstream data is disabled\n");
-	}
-
-	/* Read the value for ghoststream_enabled data */
-	val = json_object_get_value(conf_obj, "ghoststream");
-	if (json_value_get_type(val) == JSONBoolean) {
-		ghoststream_enabled = (bool)json_value_get_boolean(val);
-	}
-	if (ghoststream_enabled == true) {
-		MSG("INFO: Ghoststream data is enabled\n");
-	} else {
-		MSG("INFO: Ghoststream data is disabled\n");
-	}
-
-	/* Read the value for radiostream_enabled data */
-	val = json_object_get_value(conf_obj, "radiostream");
-	if (json_value_get_type(val) == JSONBoolean) {
-		radiostream_enabled = (bool)json_value_get_boolean(val);
-	}
-	if (radiostream_enabled == true) {
-		MSG("INFO: Radiostream data is enabled\n");
-	} else {
-		MSG("INFO: Radiostream data is disabled\n");
+    /* Read the value for upstream data */
+    val = json_object_get_value(conf_obj, "upstream");
+    if (json_value_get_type(val) == JSONBoolean) {
+        upstream_enabled = (bool)json_value_get_boolean(val);
+    }
+    if (upstream_enabled == true) {
+        MSG("INFO: Upstream data is enabled\n");
+    } else {
+        MSG("INFO: Upstream data is disabled\n");
     }
 
-	/* Read the value for statusstream_enabled data */
-	val = json_object_get_value(conf_obj, "statusstream");
-	if (json_value_get_type(val) == JSONBoolean) {
-		statusstream_enabled = (bool)json_value_get_boolean(val);
-	}
-	if (statusstream_enabled == true) {
-		MSG("INFO: Statusstream data is enabled\n");
-	} else {
-		MSG("INFO: Statusstream data is disabled\n");
+    /* Read the value for downstream_enabled data */
+    val = json_object_get_value(conf_obj, "downstream");
+    if (json_value_get_type(val) == JSONBoolean) {
+        downstream_enabled = (bool)json_value_get_boolean(val);
+    }
+    if (downstream_enabled == true) {
+        MSG("INFO: Downstream data is enabled\n");
+    } else {
+        MSG("INFO: Downstream data is disabled\n");
     }
 
-	/* Read the value for beacon_enabled data */
-	val = json_object_get_value(conf_obj, "beacon");
-	if (json_value_get_type(val) == JSONBoolean) {
-		beacon_enabled = (bool)json_value_get_boolean(val);
-	}
-	if (beacon_enabled == true) {
-		MSG("INFO: Beacon is enabled\n");
-	} else {
-		MSG("INFO: Beacon is disabled\n");
+    /* Read the value for ghoststream_enabled data */
+    val = json_object_get_value(conf_obj, "ghoststream");
+    if (json_value_get_type(val) == JSONBoolean) {
+        ghoststream_enabled = (bool)json_value_get_boolean(val);
+    }
+    if (ghoststream_enabled == true) {
+        MSG("INFO: Ghoststream data is enabled\n");
+    } else {
+        MSG("INFO: Ghoststream data is disabled\n");
     }
 
-	/* Read the value for monitor_enabled data */
-	val = json_object_get_value(conf_obj, "monitor");
-	if (json_value_get_type(val) == JSONBoolean) {
-		monitor_enabled = (bool)json_value_get_boolean(val);
-	}
-	if (monitor_enabled == true) {
-		MSG("INFO: Monitor is enabled\n");
-	} else {
-		MSG("INFO: Monitor is disabled\n");
+    /* Read the value for radiostream_enabled data */
+    val = json_object_get_value(conf_obj, "radiostream");
+    if (json_value_get_type(val) == JSONBoolean) {
+        radiostream_enabled = (bool)json_value_get_boolean(val);
+    }
+    if (radiostream_enabled == true) {
+        MSG("INFO: Radiostream data is enabled\n");
+    } else {
+        MSG("INFO: Radiostream data is disabled\n");
     }
 
-	/* Read the value for logger_enabled data */
-	val = json_object_get_value(conf_obj, "logger");
-	if (json_value_get_type(val) == JSONBoolean) {
-		logger_enabled = (bool)json_value_get_boolean(val);
-	}
-	if (logger_enabled == true) {
-		MSG("INFO: Packet logger is enabled\n");
-	} else {
-		MSG("INFO: Packet logger is disabled\n");
+    /* Read the value for statusstream_enabled data */
+    val = json_object_get_value(conf_obj, "statusstream");
+    if (json_value_get_type(val) == JSONBoolean) {
+        statusstream_enabled = (bool)json_value_get_boolean(val);
+    }
+    if (statusstream_enabled == true) {
+        MSG("INFO: Statusstream data is enabled\n");
+    } else {
+        MSG("INFO: Statusstream data is disabled\n");
     }
 
-	/* Auto-quit threshold (optional) */
+    /* Read the value for beacon_enabled data */
+    val = json_object_get_value(conf_obj, "beacon");
+    if (json_value_get_type(val) == JSONBoolean) {
+        beacon_enabled = (bool)json_value_get_boolean(val);
+    }
+    if (beacon_enabled == true) {
+        MSG("INFO: Beacon is enabled\n");
+    } else {
+        MSG("INFO: Beacon is disabled\n");
+    }
+
+    /* Read the value for monitor_enabled data */
+    val = json_object_get_value(conf_obj, "monitor");
+    if (json_value_get_type(val) == JSONBoolean) {
+        monitor_enabled = (bool)json_value_get_boolean(val);
+    }
+    if (monitor_enabled == true) {
+        MSG("INFO: Monitor is enabled\n");
+    } else {
+        MSG("INFO: Monitor is disabled\n");
+    }
+
+    /* Read the value for logger_enabled data */
+    val = json_object_get_value(conf_obj, "logger");
+    if (json_value_get_type(val) == JSONBoolean) {
+        logger_enabled = (bool)json_value_get_boolean(val);
+    }
+    if (logger_enabled == true) {
+        MSG("INFO: Packet logger is enabled\n");
+    } else {
+        MSG("INFO: Packet logger is disabled\n");
+    }
+
+    /* Auto-quit threshold (optional) */
     val = json_object_get_value(conf_obj, "autoquit_threshold");
     if (val != NULL) {
         autoquit_threshold = (uint32_t)json_value_get_number(val);
         MSG("INFO: Auto-quit after %u non-acknowledged PULL_DATA\n", autoquit_threshold);
     }
 
-	/* Platform read and override */
-	str = json_object_get_string(conf_obj, "platform");
-	if (str != NULL) {
-		if (strncmp(str, "*", 1) != 0) { snprintf(platform, sizeof platform,"%s",str); }
-		MSG("INFO: Platform configured to \"%s\"\n", platform);
-	}
+    /* Platform read and override */
+    str = json_object_get_string(conf_obj, "platform");
+    if (str != NULL) {
+        if (strncmp(str, "*", 1) != 0) { snprintf(platform, sizeof platform,"%s",str); }
+        MSG("INFO: Platform configured to \"%s\"\n", platform);
+    }
 
-	/* Read value of contact email */
-	str = json_object_get_string(conf_obj, "contact_email");
-	if (str != NULL) {
-		snprintf(email, sizeof email,"%s",str);
-		MSG("INFO: Contact email configured to \"%s\"\n", email);
-	}
+    /* Read value of contact email */
+    str = json_object_get_string(conf_obj, "contact_email");
+    if (str != NULL) {
+        snprintf(email, sizeof email,"%s",str);
+        MSG("INFO: Contact email configured to \"%s\"\n", email);
+    }
 
-	/* Read value of description */
-	str = json_object_get_string(conf_obj, "description");
-	if (str != NULL) {
-		snprintf(description, sizeof description,"%s",str);
-		MSG("INFO: Description configured to \"%s\"\n", description);
-	}
+    /* Read value of description */
+    str = json_object_get_string(conf_obj, "description");
+    if (str != NULL) {
+        snprintf(description, sizeof description,"%s",str);
+        MSG("INFO: Description configured to \"%s\"\n", description);
+    }
 
     /* free JSON parsing data structure */
     json_value_free(root_val);
@@ -1182,8 +1182,8 @@ double difftimespec(struct timespec end, struct timespec beginning) {
 }
 
 void usage(char *proc_name) {
-	fprintf(stderr, "Usage: %s [-c config_dir] [-l logfile]\n", proc_name);
-	exit(1);
+    fprintf(stderr, "Usage: %s [-c config_dir] [-l logfile]\n", proc_name);
+    exit(1);
 }
 
 static char *short_options = "c:l:h";
@@ -1230,19 +1230,19 @@ int main(int argc, char *argv[])
 
     while((i = getopt_long(argc, argv, short_options, long_options, &opt_ind)) >= 0) {
         switch(i) {
-	  case 0:
-	       break;
-	  case 'c':
-	       strncpy(cfg_dir, optarg, sizeof(cfg_dir)-2);
-	       strcat(cfg_dir, "/");
-	       break;
-	  case 'l':
-	       logfile_path = optarg;
-	       break;
-	  default:
-	       usage(proc_name);
-	       break;
-	}
+      case 0:
+           break;
+      case 'c':
+           strncpy(cfg_dir, optarg, sizeof(cfg_dir)-2);
+           strcat(cfg_dir, "/");
+           break;
+      case 'l':
+           logfile_path = optarg;
+           break;
+      default:
+           usage(proc_name);
+           break;
+    }
     }
 
     snprintf(global_cfg_path, sizeof(global_cfg_path),  "%s%s", cfg_dir, global_cfg_name);
@@ -1254,14 +1254,14 @@ int main(int argc, char *argv[])
     FILE *logfile = NULL;
     if (logfile_path) {
         logfile = fopen(logfile_path, "w");
-	if (logfile) {
-	    logfile_fd = fileno(logfile);
-	    dup2(logfile_fd, STDOUT_FILENO);
-	    dup2(logfile_fd, STDERR_FILENO);
-	} else {
-	    printf("Error opening log file %s\n", logfile_path);
-	    exit(1);
-	}
+    if (logfile) {
+        logfile_fd = fileno(logfile);
+        dup2(logfile_fd, STDOUT_FILENO);
+        dup2(logfile_fd, STDERR_FILENO);
+    } else {
+        printf("Error opening log file %s\n", logfile_path);
+        exit(1);
+    }
     }
 
     /* display version informations */
@@ -1306,23 +1306,23 @@ int main(int argc, char *argv[])
     }
 
     /* Start GPS a.s.a.p., to allow it to lock */
-	if (gps_enabled == true) {
-		if ((gps_fake_enable == false) && (gps_tty_path[0] != '\0')) { /* do not try to open GPS device if no path set */
-			i = lgw_gps_enable(gps_tty_path, "ubx7", 0, &gps_tty_fd); /* HAL only supports u-blox 7 for now */
+    if (gps_enabled == true) {
+        if ((gps_fake_enable == false) && (gps_tty_path[0] != '\0')) { /* do not try to open GPS device if no path set */
+            i = lgw_gps_enable(gps_tty_path, "ubx7", 0, &gps_tty_fd); /* HAL only supports u-blox 7 for now */
         if (i != LGW_GPS_SUCCESS) {
             MSG("WARNING: [main] impossible to open %s for GPS sync (check permissions)\n", gps_tty_path);
-				gps_active = false;
+                gps_active = false;
             gps_ref_valid = false;
         } else {
-        	MSG("INFO: [main] TTY port %s open for GPS synchronization\n", gps_tty_path);
-				gps_active = true;
+            MSG("INFO: [main] TTY port %s open for GPS synchronization\n", gps_tty_path);
+                gps_active = true;
             gps_ref_valid = false;
         }
-		} else {
-			gps_active = false;
-			gps_ref_valid = false;
+        } else {
+            gps_active = false;
+            gps_ref_valid = false;
     }
-	}
+    }
 
     /* get timezone info */
     tzset();
@@ -1336,45 +1336,45 @@ int main(int argc, char *argv[])
     /* sanity check on configuration variables */
     // TODO
 
-	//TODO: Check if there are any live servers available, if not we should exit since there cannot be any
-	// sensible course of action. Actually it would be best to redesign the whole communication loop, and take
-	// the socket constructors to be inside a try-retry loop. That way we can respond to severs that implemented
-	// there UDP handling erroneously, or any other temporal obstruction in the communication
-	// path (broken stacks in routers for example) Now, contact may be lost for ever and a manual
-	// restart at the this side is required.
-	// => This has been 'resolved' bij allowing the forwarder to exit at stalled servers.
+    //TODO: Check if there are any live servers available, if not we should exit since there cannot be any
+    // sensible course of action. Actually it would be best to redesign the whole communication loop, and take
+    // the socket constructors to be inside a try-retry loop. That way we can respond to severs that implemented
+    // there UDP handling erroneously, or any other temporal obstruction in the communication
+    // path (broken stacks in routers for example) Now, contact may be lost for ever and a manual
+    // restart at the this side is required.
+    // => This has been 'resolved' bij allowing the forwarder to exit at stalled servers.
 
     /* starting the concentrator */
-	if (radiostream_enabled == true) {
-		MSG("INFO: [main] Starting the concentrator\n");
+    if (radiostream_enabled == true) {
+        MSG("INFO: [main] Starting the concentrator\n");
     i = lgw_start();
     if (i == LGW_HAL_SUCCESS) {
-			MSG("INFO: [main] concentrator started, radio packets can now be received.\n");
+            MSG("INFO: [main] concentrator started, radio packets can now be received.\n");
     } else {
         MSG("ERROR: [main] failed to start the concentrator\n");
         exit(EXIT_FAILURE);
     }
-	} else {
-		MSG("WARNING: Radio is disabled, radio packets cannot be send or received.\n");
-	}
+    } else {
+        MSG("WARNING: Radio is disabled, radio packets cannot be send or received.\n");
+    }
 
-	
+    
     /* spawn threads to manage upstream and downstream */
-	if (upstream_enabled == true) {
+    if (upstream_enabled == true) {
     i = pthread_create( &thrid_up, NULL, (void * (*)(void *))thread_up, NULL);
     if (i != 0) {
         MSG("ERROR: [main] impossible to create upstream thread\n");
         exit(EXIT_FAILURE);
     }
-	}
-	if (downstream_enabled == true) {
-		for (ic = 0; ic < serv_count; ic++) if (servers[ic].live == true && servers[ic].type == semtech && servers[ic].downstream == true) {
-			i = pthread_create( &servers[ic].t_down, NULL, (void * (*)(void *))semtech_thread_down, (void *) (long) ic);
-			if (i != 0) {
-				MSG("ERROR: [main] impossible to create downstream thread\n");
-				exit(EXIT_FAILURE);
-			}
-		}
+    }
+    if (downstream_enabled == true) {
+        for (ic = 0; ic < serv_count; ic++) if (servers[ic].live == true && servers[ic].type == semtech && servers[ic].downstream == true) {
+            i = pthread_create( &servers[ic].t_down, NULL, (void * (*)(void *))semtech_thread_down, (void *) (long) ic);
+            if (i != 0) {
+                MSG("ERROR: [main] impossible to create downstream thread\n");
+                exit(EXIT_FAILURE);
+            }
+        }
 
     /* JIT queue initialization */
     jit_queue_init(&jit_queue);
@@ -1383,20 +1383,20 @@ int main(int argc, char *argv[])
     if (i != 0) {
         MSG("ERROR: [main] impossible to create JIT thread\n");
         exit(EXIT_FAILURE);
-	}
+    }
     }
 
     // Timer synchronization needed for downstream ...
     if (gps_active == true || downstream_enabled == true) {
-    	i = pthread_create( &thrid_timersync, NULL, (void * (*)(void *))thread_timersync, NULL);
-    	if (i != 0) {
-    		MSG("ERROR: [main] impossible to create Timer Sync thread\n");
-    	exit(EXIT_FAILURE);
-    	}
+        i = pthread_create( &thrid_timersync, NULL, (void * (*)(void *))thread_timersync, NULL);
+        if (i != 0) {
+            MSG("ERROR: [main] impossible to create Timer Sync thread\n");
+        exit(EXIT_FAILURE);
+        }
     }
 
     /* spawn thread to manage GPS */
-	if (gps_active == true) {
+    if (gps_active == true) {
         i = pthread_create( &thrid_gps, NULL, (void * (*)(void *))thread_gps, NULL);
         if (i != 0) {
             MSG("ERROR: [main] impossible to create GPS thread\n");
@@ -1417,21 +1417,21 @@ int main(int argc, char *argv[])
     sigaction(SIGINT, &sigact, NULL); /* Ctrl-C */
     sigaction(SIGTERM, &sigact, NULL); /* default "kill" command */
 
-	/* Start the ghost Listener */
+    /* Start the ghost Listener */
     if (ghoststream_enabled == true) {
-    	ghost_start(ghost_addr,ghost_port,reference_coord,gateway_id);
-		MSG("INFO: [main] Ghost listener started, ghost packets can now be received.\n");
+        ghost_start(ghost_addr,ghost_port,reference_coord,gateway_id);
+        MSG("INFO: [main] Ghost listener started, ghost packets can now be received.\n");
     }
-	
-	/* Connect to the monitor server */
+    
+    /* Connect to the monitor server */
     if (monitor_enabled == true) {
-    	monitor_start(monitor_addr,monitor_port);
-		MSG("INFO: [main] Monitor contacted, monitor data can now be requested.\n");
+        monitor_start(monitor_addr,monitor_port);
+        MSG("INFO: [main] Monitor contacted, monitor data can now be requested.\n");
     }
 
     /* Check if we have anything to do */
     if ( (radiostream_enabled == false) && (ghoststream_enabled == false) && (statusstream_enabled == false) && (monitor_enabled == false) ) {
-    	MSG("WARNING: [main] All streams have been disabled, gateway may be completely silent.\n");
+        MSG("WARNING: [main] All streams have been disabled, gateway may be completely silent.\n");
     }
 
     /* main loop task : statistics transmission */
@@ -1439,43 +1439,43 @@ int main(int argc, char *argv[])
         /* wait for next reporting interval */
         wait_ms(1000 * stat_interval);
 
-	if (exit_sig || quit_sig) {
-		break;
-	}
+    if (exit_sig || quit_sig) {
+        break;
+    }
 
-	    // Create statistics report
-	    stats_report();
+        // Create statistics report
+        stats_report();
 
-	    /* Exit strategies. */
-	    /* Server that are 'off-line may be a reason to exit */
-	    /* move to semtech_transport in due time */
-	    current_time = time(NULL);
-	    pthread_mutex_lock(&mx_meas_up);
+        /* Exit strategies. */
+        /* Server that are 'off-line may be a reason to exit */
+        /* move to semtech_transport in due time */
+        current_time = time(NULL);
+        pthread_mutex_lock(&mx_meas_up);
             for (i=0; i<serv_count; i++) { 
-		if (servers[i].type == semtech) {
-		    stall_time[i] = (int) (current_time - servers[i].contact); 
-		}
-	    }
+        if (servers[i].type == semtech) {
+            stall_time[i] = (int) (current_time - servers[i].contact); 
+        }
+        }
             pthread_mutex_unlock(&mx_meas_up);
-	    for (ic = 0; ic < serv_count; ic++) { 
-	      if ( (servers[i].type == semtech) && (servers[ic].max_stall > 0) && (stall_time[ic] > servers[ic].max_stall) ) { 
-		MSG("ERROR: [main] for server %s stalled for %i seconds, terminating packet forwarder.\n", servers[ic].addr, stall_time[ic]);
-			exit(EXIT_FAILURE); 
-	      } 
-	    }
+        for (ic = 0; ic < serv_count; ic++) { 
+          if ( (servers[i].type == semtech) && (servers[ic].max_stall > 0) && (stall_time[ic] > servers[ic].max_stall) ) { 
+        MSG("ERROR: [main] for server %s stalled for %i seconds, terminating packet forwarder.\n", servers[ic].addr, stall_time[ic]);
+            exit(EXIT_FAILURE); 
+          } 
+        }
 
-	    /* Code of gonzalocasas to catch transient hardware failures */
-		uint32_t trig_cnt_us;
-		pthread_mutex_lock(&mx_concent);
-		if (lgw_get_trigcnt(&trig_cnt_us) == LGW_HAL_SUCCESS && trig_cnt_us == 0x7E000000) {
-			MSG("ERROR: [main] unintended SX1301 reset detected, terminating packet forwarder.\n");
-			exit(EXIT_FAILURE);
-		}
-		pthread_mutex_unlock(&mx_concent);
-	}
+        /* Code of gonzalocasas to catch transient hardware failures */
+        uint32_t trig_cnt_us;
+        pthread_mutex_lock(&mx_concent);
+        if (lgw_get_trigcnt(&trig_cnt_us) == LGW_HAL_SUCCESS && trig_cnt_us == 0x7E000000) {
+            MSG("ERROR: [main] unintended SX1301 reset detected, terminating packet forwarder.\n");
+            exit(EXIT_FAILURE);
+        }
+        pthread_mutex_unlock(&mx_concent);
+    }
 
     /* wait for upstream thread to finish (1 fetch cycle max) */
-	if (upstream_enabled == true) pthread_join(thrid_up, NULL);
+    if (upstream_enabled == true) pthread_join(thrid_up, NULL);
     /* shut down transports */
     transport_stop();
 
@@ -1483,15 +1483,15 @@ int main(int argc, char *argv[])
     pthread_cancel(thrid_jit); /* don't wait for jit thread */
     if (gps_active == true) pthread_cancel(thrid_timersync); /* don't wait for timer sync thread */
 
-	if (ghoststream_enabled == true) ghost_stop();
-	if (monitor_enabled == true) monitor_stop();
-	if (gps_active == true) pthread_cancel(thrid_gps);   /* don't wait for GPS thread */
-	if (gps_active == true) pthread_cancel(thrid_valid); /* don't wait for validation thread */
+    if (ghoststream_enabled == true) ghost_stop();
+    if (monitor_enabled == true) monitor_stop();
+    if (gps_active == true) pthread_cancel(thrid_gps);   /* don't wait for GPS thread */
+    if (gps_active == true) pthread_cancel(thrid_valid); /* don't wait for validation thread */
 
     /* if an exit signal was received, try to quit properly */
     if (exit_sig) {
         /* stop the hardware */
-		if (radiostream_enabled == true) {
+        if (radiostream_enabled == true) {
         i = lgw_stop();
         if (i == LGW_HAL_SUCCESS) {
             MSG("INFO: concentrator stopped successfully\n");
@@ -1499,7 +1499,7 @@ int main(int argc, char *argv[])
             MSG("WARNING: failed to stop concentrator successfully\n");
         }
     }
-	}
+    }
 
     MSG("INFO: Exiting packet forwarder program\n");
     exit(EXIT_SUCCESS);
@@ -1524,8 +1524,8 @@ void thread_up(void) {
 
         /* fetch packets */
         pthread_mutex_lock(&mx_concent);
-		if (radiostream_enabled == true) nb_pkt = lgw_receive(NB_PKT_MAX, rxpkt); else nb_pkt = 0;
-		if (ghoststream_enabled == true) nb_pkt = ghost_get(NB_PKT_MAX-nb_pkt, &rxpkt[nb_pkt]) + nb_pkt;
+        if (radiostream_enabled == true) nb_pkt = lgw_receive(NB_PKT_MAX, rxpkt); else nb_pkt = 0;
+        if (ghoststream_enabled == true) nb_pkt = ghost_get(NB_PKT_MAX-nb_pkt, &rxpkt[nb_pkt]) + nb_pkt;
 
 
         //TODO this test should in fact be before the ghost packets are collected.
@@ -1548,12 +1548,12 @@ void thread_up(void) {
             wait_ms(FETCH_SLEEP_MS);
             continue;
         }
-		
-	stats_data_up(nb_pkt, rxpkt);
+        
+    stats_data_up(nb_pkt, rxpkt);
         transport_data_up(nb_pkt, rxpkt, send_report);
-	if (send_report == true) {
-		report_ready = false;
-	}
+    if (send_report == true) {
+        report_ready = false;
+    }
 
     }
     MSG("\nINFO: End of upstream thread\n");
@@ -1567,19 +1567,19 @@ void thread_up(void) {
 void print_tx_status(uint8_t tx_status) {
     switch (tx_status) {
         case TX_OFF:
-        	LOGGER("INFO: [jit] lgw_status returned TX_OFF\n");
+            LOGGER("INFO: [jit] lgw_status returned TX_OFF\n");
             break;
         case TX_FREE:
-        	LOGGER("INFO: [jit] lgw_status returned TX_FREE\n");
+            LOGGER("INFO: [jit] lgw_status returned TX_FREE\n");
             break;
         case TX_EMITTING:
-        	LOGGER("INFO: [jit] lgw_status returned TX_EMITTING\n");
+            LOGGER("INFO: [jit] lgw_status returned TX_EMITTING\n");
             break;
         case TX_SCHEDULED:
-        	LOGGER("INFO: [jit] lgw_status returned TX_SCHEDULED\n");
+            LOGGER("INFO: [jit] lgw_status returned TX_SCHEDULED\n");
             break;
         default:
-        	LOGGER("INFO: [jit] lgw_status returned UNKNOWN (%d)\n", tx_status);
+            LOGGER("INFO: [jit] lgw_status returned UNKNOWN (%d)\n", tx_status);
             break;
     }
 }
@@ -1598,9 +1598,9 @@ void thread_jit(void) {
     enum jit_pkt_type_e pkt_type;
     uint8_t tx_status;
 
-	MSG("INFO: JIT thread activated.\n");
+    MSG("INFO: JIT thread activated.\n");
 
-	while (!exit_sig && !quit_sig) {
+    while (!exit_sig && !quit_sig) {
         wait_ms(10);
 
         /* transfer data and metadata to the concentrator, and schedule TX */
@@ -1613,20 +1613,20 @@ void thread_jit(void) {
                 if (jit_result == JIT_ERROR_OK) {
                     /* update beacon stats */
                     if (pkt_type == JIT_PKT_TYPE_BEACON) {
-			increment_down(BEACON_SENT);
+            increment_down(BEACON_SENT);
                     }
 
                     /* check if concentrator is free for sending new packet */
                     result = lgw_status(TX_STATUS, &tx_status);
                     if (result == LGW_HAL_ERROR) {
-                    	LOGGER("WARNING: [jit] lgw_status failed\n");
+                        LOGGER("WARNING: [jit] lgw_status failed\n");
                     } else {
                         if (tx_status == TX_EMITTING) {
-                        	LOGGER("ERROR: concentrator is currently emitting\n");
+                            LOGGER("ERROR: concentrator is currently emitting\n");
                             print_tx_status(tx_status);
                             continue;
                         } else if (tx_status == TX_SCHEDULED) {
-                        	LOGGER("WARNING: a downlink was already scheduled, overwriting it...\n");
+                            LOGGER("WARNING: a downlink was already scheduled, overwriting it...\n");
                             print_tx_status(tx_status);
                         } else {
                             /* Nothing to do */
@@ -1638,21 +1638,21 @@ void thread_jit(void) {
                     result = lgw_send(pkt);
                     pthread_mutex_unlock(&mx_concent); /* free concentrator ASAP */
                     if (result == LGW_HAL_ERROR) {
-			increment_down(TX_FAIL);
+            increment_down(TX_FAIL);
                         LOGGER("WARNING: [jit] lgw_send failed %d\n",result);
                         continue;
                     } else {
-			increment_down(TX_OK);
+            increment_down(TX_OK);
                         MSG_DEBUG(DEBUG_PKT_FWD, "lgw_send done: count_us=%u\n", pkt.count_us);
                     }
                 } else {
-                	LOGGER("ERROR: jit_dequeue failed with %d\n", jit_result);
+                    LOGGER("ERROR: jit_dequeue failed with %d\n", jit_result);
                 }
             }
         } else if (jit_result == JIT_ERROR_EMPTY) {
             /* Do nothing, it can happen */
         } else {
-        	LOGGER("ERROR: jit_peek failed with %d\n", jit_result);
+            LOGGER("ERROR: jit_peek failed with %d\n", jit_result);
         }
     }
 
@@ -1682,13 +1682,13 @@ void thread_gps(void) {
     /* initialize some variables before loop */
     memset(serial_buff, 0, sizeof serial_buff);
 
-	MSG("INFO: GPS thread activated.\n");
-	
+    MSG("INFO: GPS thread activated.\n");
+    
     while (!exit_sig && !quit_sig) {
         /* blocking canonical read on serial port */
         nb_char = read(gps_tty_fd, serial_buff, sizeof(serial_buff)-1);
         if (nb_char <= 0) {
-        	LOGGER("WARNING: [gps] read() returned value <= 0\n");
+            LOGGER("WARNING: [gps] read() returned value <= 0\n");
             continue;
         } else {
             serial_buff[nb_char] = 0; /* add null terminator, just to be sure */
@@ -1702,7 +1702,7 @@ void thread_gps(void) {
             /* get UTC time for synchronization */
             i = lgw_gps_get(&utc_time, &gps_time, NULL, NULL);
             if (i != LGW_GPS_SUCCESS) {
-            	LOGGER("WARNING: [gps] could not get UTC time from GPS\n");
+                LOGGER("WARNING: [gps] could not get UTC time from GPS\n");
                 continue;
             }
 
@@ -1711,7 +1711,7 @@ void thread_gps(void) {
             i = lgw_get_trigcnt(&trig_tstamp);
             pthread_mutex_unlock(&mx_concent);
             if (i != LGW_HAL_SUCCESS) {
-            	LOGGER("WARNING: [gps] failed to read concentrator timestamp\n");
+                LOGGER("WARNING: [gps] failed to read concentrator timestamp\n");
                 continue;
             }
 
@@ -1720,13 +1720,13 @@ void thread_gps(void) {
             i = lgw_gps_sync(&time_reference_gps, trig_tstamp, utc_time, gps_time);
             pthread_mutex_unlock(&mx_timeref);
             if (i != LGW_GPS_SUCCESS) {
-            	LOGGER("WARNING: [gps] GPS out of sync, keeping previous time reference\n");
+                LOGGER("WARNING: [gps] GPS out of sync, keeping previous time reference\n");
                 continue;
             }
 
             /* update gateway coordinates */
-            i = lgw_gps_get(NULL, NULL, &coord, &gpserr);
-            pthread_mutex_lock(&mx_meas_gps);
+			pthread_mutex_lock(&mx_meas_gps);
+			i = lgw_gps_get(NULL, NULL, &coord, &gpserr);
             if (i == LGW_GPS_SUCCESS) {
                 gps_coord_valid = true;
                 meas_gps_coord = coord;
@@ -1756,8 +1756,8 @@ void thread_valid(void) {
     double init_acc = 0.0;
     double x;
 
-	MSG("INFO: Validation thread activated.\n");
-	
+    MSG("INFO: Validation thread activated.\n");
+    
     /* correction debug */
     // FILE * log_file = NULL;
     // time_t now_time;
