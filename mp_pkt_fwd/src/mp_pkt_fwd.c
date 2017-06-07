@@ -225,6 +225,8 @@ bool gps_enabled         = false;   /* controls the use of the GPS              
 bool beacon_enabled      = false;   /* controls the activation of the time beacon.      */
 static bool monitor_enabled     = false;   /* controls the activation access mode.             */
 bool logger_enabled      = false;   /* controls the activation of more logging          */
+bool flush_enabled       = false;   /* flush output after statistics                    */
+bool flush_line          = false;   /* flush output after every line                    */
 
 /* TX capabilities */
 struct lgw_tx_gain_lut_s txlut; /* TX gain table */
@@ -1117,6 +1119,29 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Packet logger is disabled\n");
     }
 
+
+	/* Read the value for flush enabled data */
+	val = json_object_get_value(conf_obj, "flush");
+	if (json_value_get_type(val) == JSONBoolean) {
+		flush_enabled = (bool)json_value_get_boolean(val);
+	}
+	if (flush_enabled == true) {
+		MSG("INFO: Flush output after statistics is enabled\n");
+	} else {
+		MSG("INFO: Flush output after statistic is disabled\n");
+    }
+
+	/* Read the value for flush_line data */
+	val = json_object_get_value(conf_obj, "flush_line");
+	if (json_value_get_type(val) == JSONBoolean) {
+		flush_line = (bool)json_value_get_boolean(val);
+	}
+	if (flush_line == true) {
+		MSG("INFO: Flush after each line of output is enabled\n");
+	} else {
+		MSG("INFO: Flush after each line of output is disabled\n");
+    }
+
 	/* Auto-quit threshold (optional) */
     val = json_object_get_value(conf_obj, "autoquit_threshold");
     if (val != NULL) {
@@ -1659,83 +1684,150 @@ void thread_jit(void) {
     MSG("\nINFO: End of JIT thread\n");
 }
 
+
 /* -------------------------------------------------------------------------- */
 /* --- THREAD 4: PARSE GPS MESSAGE AND KEEP GATEWAY IN SYNC ----------------- */
 
-void thread_gps(void) {
-    int i;
-
-    /* serial variables */
-    char serial_buff[128]; /* buffer to receive GPS data */
-    ssize_t nb_char;
-
-    /* variables for PPM pulse GPS synchronization */
-    enum gps_msg latest_msg; /* keep track of latest NMEA message parsed */
-    struct timespec utc_time; /* UTC time associated with PPS pulse */
+static void gps_process_sync(void) {
     struct timespec gps_time;
+    struct timespec utc;
     uint32_t trig_tstamp; /* concentrator timestamp associated with PPM pulse */
+    int i = lgw_gps_get(&utc, &gps_time, NULL, NULL);
 
+    /* get GPS time for synchronization */
+    if (i != LGW_GPS_SUCCESS) {
+        MSG("WARNING: [gps] could not get GPS time from GPS\n");
+        return;
+    }
+
+    /* get timestamp captured on PPM pulse  */
+    pthread_mutex_lock(&mx_concent);
+    i = lgw_get_trigcnt(&trig_tstamp);
+    pthread_mutex_unlock(&mx_concent);
+    if (i != LGW_HAL_SUCCESS) {
+        MSG("WARNING: [gps] failed to read concentrator timestamp\n");
+        return;
+    }
+
+    /* try to update time reference with the new GPS time & timestamp */
+    pthread_mutex_lock(&mx_timeref);
+    i = lgw_gps_sync(&time_reference_gps, trig_tstamp, utc, gps_time);
+    pthread_mutex_unlock(&mx_timeref);
+    if (i != LGW_GPS_SUCCESS) {
+        MSG("WARNING: [gps] GPS out of sync, keeping previous time reference\n");
+    }
+}
+
+static void gps_process_coords(void) {
     /* position variable */
     struct coord_s coord;
     struct coord_s gpserr;
+    int    i = lgw_gps_get(NULL, NULL, &coord, &gpserr);
+
+    /* update gateway coordinates */
+    pthread_mutex_lock(&mx_meas_gps);
+    if (i == LGW_GPS_SUCCESS) {
+        gps_coord_valid = true;
+        meas_gps_coord = coord;
+        meas_gps_err = gpserr;
+        // TODO: report other GPS statistics (typ. signal quality & integrity)
+    } else {
+        gps_coord_valid = false;
+    }
+    pthread_mutex_unlock(&mx_meas_gps);
+}
+
+void thread_gps(void) {
+    /* serial variables */
+    char serial_buff[128]; /* buffer to receive GPS data */
+    size_t wr_idx = 0;     /* pointer to end of chars in buffer */
+
+    /* variables for PPM pulse GPS synchronization */
+    enum gps_msg latest_msg; /* keep track of latest NMEA message parsed */
 
     /* initialize some variables before loop */
     memset(serial_buff, 0, sizeof serial_buff);
 
-	MSG("INFO: GPS thread activated.\n");
-	
     while (!exit_sig && !quit_sig) {
-        /* blocking canonical read on serial port */
-        nb_char = read(gps_tty_fd, serial_buff, sizeof(serial_buff)-1);
+        size_t rd_idx = 0;
+        size_t frame_end_idx = 0;
+
+        /* blocking non-canonical read on serial port */
+        ssize_t nb_char = read(gps_tty_fd, serial_buff + wr_idx, LGW_GPS_MIN_MSG_SIZE);
         if (nb_char <= 0) {
-        	LOGGER("WARNING: [gps] read() returned value <= 0\n");
+            MSG("WARNING: [gps] read() returned value %d\n", nb_char);
             continue;
-        } else {
-            serial_buff[nb_char] = 0; /* add null terminator, just to be sure */
         }
+        wr_idx += (size_t)nb_char;
 
-        /* parse the received NMEA */
-        latest_msg = lgw_parse_nmea(serial_buff, sizeof(serial_buff));
+        /*******************************************
+         * Scan buffer for UBX/NMEA sync chars and *
+         * attempt to decode frame if one is found *
+         *******************************************/
+        while(rd_idx < wr_idx) {
+            size_t frame_size = 0;
 
-        if (latest_msg == NMEA_RMC) { /* trigger sync only on RMC frames */
+            /* Scan buffer for UBX sync char */
+            if(serial_buff[rd_idx] == (char)LGW_GPS_UBX_SYNC_CHAR) {
 
-            /* get UTC time for synchronization */
-            i = lgw_gps_get(&utc_time, &gps_time, NULL, NULL);
-            if (i != LGW_GPS_SUCCESS) {
-            	LOGGER("WARNING: [gps] could not get UTC time from GPS\n");
-                continue;
+                /***********************
+                 * Found UBX sync char *
+                 ***********************/
+                latest_msg = lgw_parse_ubx(&serial_buff[rd_idx], (wr_idx - rd_idx), &frame_size);
+
+                if (frame_size > 0) {
+                    if (latest_msg == INCOMPLETE) {
+                        /* UBX header found but frame appears to be missing bytes */
+                        frame_size = 0;
+                    } else if (latest_msg == INVALID) {
+                        /* message header received but message appears to be corrupted */
+                        MSG("WARNING: [gps] could not get a valid message from GPS (no time)\n");
+                        frame_size = 0;
+                    } else if (latest_msg == UBX_NAV_TIMEGPS) {
+                        gps_process_sync();
+                    }
+                }
+            } else if(serial_buff[rd_idx] == LGW_GPS_NMEA_SYNC_CHAR) {
+                /************************
+                 * Found NMEA sync char *
+                 ************************/
+                /* scan for NMEA end marker (LF = 0x0a) */
+                char* nmea_end_ptr = memchr(&serial_buff[rd_idx],(int)0x0a, (wr_idx - rd_idx));
+
+                if(nmea_end_ptr) {
+                    /* found end marker */
+                    frame_size = nmea_end_ptr - &serial_buff[rd_idx] + 1;
+                    latest_msg = lgw_parse_nmea(&serial_buff[rd_idx], frame_size);
+
+                    if(latest_msg == INVALID || latest_msg == UNKNOWN) {
+                        /* checksum failed */
+                        frame_size = 0;
+                    } else if (latest_msg == NMEA_RMC) { /* Get location from RMC frames */
+                        gps_process_coords();
+                    }
+                }
             }
 
-            /* get timestamp captured on PPM pulse  */
-            pthread_mutex_lock(&mx_concent);
-            i = lgw_get_trigcnt(&trig_tstamp);
-            pthread_mutex_unlock(&mx_concent);
-            if (i != LGW_HAL_SUCCESS) {
-            	LOGGER("WARNING: [gps] failed to read concentrator timestamp\n");
-                continue;
-            }
-
-            /* try to update time reference with the new UTC & timestamp */
-            pthread_mutex_lock(&mx_timeref);
-            i = lgw_gps_sync(&time_reference_gps, trig_tstamp, utc_time, gps_time);
-            pthread_mutex_unlock(&mx_timeref);
-            if (i != LGW_GPS_SUCCESS) {
-            	LOGGER("WARNING: [gps] GPS out of sync, keeping previous time reference\n");
-                continue;
-            }
-
-            /* update gateway coordinates */
-            i = lgw_gps_get(NULL, NULL, &coord, &gpserr);
-            pthread_mutex_lock(&mx_meas_gps);
-            if (i == LGW_GPS_SUCCESS) {
-                gps_coord_valid = true;
-                meas_gps_coord = coord;
-                meas_gps_err = gpserr;
-                // TODO: report other GPS statistics (typ. signal quality & integrity)
+            if(frame_size > 0) {
+                /* At this point message is a checksum verified frame
+                   we're processed or ignored. Remove frame from buffer */
+                rd_idx += frame_size;
+                frame_end_idx = rd_idx;
             } else {
-                gps_coord_valid = false;
+                rd_idx++;
             }
-            pthread_mutex_unlock(&mx_meas_gps);
+        } /* ...for(rd_idx = 0... */
+
+        if(frame_end_idx) {
+          /* Frames have been processed. Remove bytes to end of last processed frame */
+          memcpy(serial_buff, &serial_buff[frame_end_idx], wr_idx - frame_end_idx);
+          wr_idx -= frame_end_idx;
+        } /* ...for(rd_idx = 0... */
+
+        /* Prevent buffer overflow */
+        if((sizeof(serial_buff) - wr_idx) < LGW_GPS_MIN_MSG_SIZE) {
+            memcpy(serial_buff, &serial_buff[LGW_GPS_MIN_MSG_SIZE], wr_idx - LGW_GPS_MIN_MSG_SIZE);
+            wr_idx -= LGW_GPS_MIN_MSG_SIZE;
         }
     }
     MSG("\nINFO: End of GPS thread\n");

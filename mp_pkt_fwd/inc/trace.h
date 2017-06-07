@@ -26,7 +26,7 @@ Maintainer: Michael Coracin
 #define DEBUG_FOLLOW    0
 
 
-#define MSG(args...) printf(args) /* message that is destined to the user */
+#define MSG(args...) { printf(args) /* message that is destined to the user */; fflush(stdout); }
 
 #define MSG_DEBUG(FLAG, fmt, ...)                                                                         \
             do  {                                                                                         \
