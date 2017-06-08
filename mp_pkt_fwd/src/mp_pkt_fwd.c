@@ -1767,7 +1767,6 @@ void thread_gps(void) {
         while(rd_idx < wr_idx) {
             size_t frame_size = 0;
 
-printf("%c",serial_buff[rd_idx]);
             /* Scan buffer for UBX sync char */
             if(serial_buff[rd_idx] == (char)LGW_GPS_UBX_SYNC_CHAR) {
 
@@ -1799,19 +1798,15 @@ printf("%c",serial_buff[rd_idx]);
                     /* found end marker */
                     frame_size = nmea_end_ptr - &serial_buff[rd_idx] + 1;
                     latest_msg = lgw_parse_nmea(&serial_buff[rd_idx], frame_size);
-printf("\nSerial NMEA found %d bytes, status %d\n",frame_size,latest_msg);
-{ char buf[200];
-  strncpy(buf, &serial_buff[rd_idx], frame_size);
-  buf[frame_size] = 0;
-  printf("Data: %s\n",buf);
-}
 
                     if(latest_msg == INVALID || latest_msg == UNKNOWN) {
                         /* checksum failed */
                         frame_size = 0;
-                    } else if (latest_msg == NMEA_RMC) { /* Get location from RMC frames */
+                    } else if (latest_msg == NMEA_GGA) { /* Get location from GGA frames */
                         gps_process_coords();
-                    }
+                    } else if (latest_msg == NMEA_RMC) { /* Get time/date from RMC frames */
+                        gps_process_sync();
+		    }
                 }
             }
 
