@@ -1767,6 +1767,7 @@ void thread_gps(void) {
         while(rd_idx < wr_idx) {
             size_t frame_size = 0;
 
+printf("%c",serial_buff[rd_idx]);
             /* Scan buffer for UBX sync char */
             if(serial_buff[rd_idx] == (char)LGW_GPS_UBX_SYNC_CHAR) {
 
@@ -1793,6 +1794,7 @@ void thread_gps(void) {
                  ************************/
                 /* scan for NMEA end marker (LF = 0x0a) */
                 char* nmea_end_ptr = memchr(&serial_buff[rd_idx],(int)0x0a, (wr_idx - rd_idx));
+printf("\nSerial NMEA found %d bytes\n",nmea_end_ptr-rd_idx);
 
                 if(nmea_end_ptr) {
                     /* found end marker */
