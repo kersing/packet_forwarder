@@ -1794,12 +1794,17 @@ printf("%c",serial_buff[rd_idx]);
                  ************************/
                 /* scan for NMEA end marker (LF = 0x0a) */
                 char* nmea_end_ptr = memchr(&serial_buff[rd_idx],(int)0x0a, (wr_idx - rd_idx));
-printf("\nSerial NMEA found %d bytes\n",nmea_end_ptr-rd_idx);
 
                 if(nmea_end_ptr) {
                     /* found end marker */
                     frame_size = nmea_end_ptr - &serial_buff[rd_idx] + 1;
                     latest_msg = lgw_parse_nmea(&serial_buff[rd_idx], frame_size);
+printf("\nSerial NMEA found %d bytes, status %d\n",frame_size,latest_msg);
+{ char buf[200];
+  strncpy(buf, &serial_buff[rd_idx], frame_size);
+  buf[frame_size] = 0;
+  printf("Data: %s\n",buf);
+}
 
                     if(latest_msg == INVALID || latest_msg == UNKNOWN) {
                         /* checksum failed */
