@@ -207,8 +207,8 @@ static char ghost_port[8]  = "1914";      /* port to listen on */
 
 /* Variables to make the performance of forwarder locally available. */
 char stat_format[32] = "semtech";        /* format for json statistics. */
-char stat_file[1024] = "statistics.txt"; /* name / full path of file to store results in. */
-int stat_damping = 50;        /* default damping for statistical values. */
+char stat_file[1024] = "\0";             /* name / full path of file to store results in, off by default. */
+int stat_damping = 50;                   /* default damping for statistical values. */
 
 /* Just In Time TX scheduling */
 struct jit_queue_s jit_queue;
