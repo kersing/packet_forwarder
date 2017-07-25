@@ -347,5 +347,5 @@ static void thread_ghost(void)
                pthread_mutex_unlock(&cb_ghost);
                LOGGER("RECEIVED, [ghost] ghst_bgn = %i \n", ghst_bgn); } } }
 
-    MSG("\nINFO: End of ghost thread\n");
+    MSG("INFO: End of ghost thread\n");
 }

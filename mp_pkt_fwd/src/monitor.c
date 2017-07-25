@@ -389,5 +389,5 @@ static void thread_monitor(void)
 
            } }
 
-    MSG("\nINFO: End of monitor thread\n");
+    MSG("INFO: End of monitor thread\n");
 }

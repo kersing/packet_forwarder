@@ -541,8 +541,8 @@ void jit_report_queue(struct jit_queue_s *queue) {
     num_pkt    = queue->num_pkt;
     num_beacon = queue->num_beacon;
     pthread_mutex_unlock(&mx_jit_queue);
-    MSG("# INFO: JIT queue contains %d packets.\n", num_pkt);
-    MSG("# INFO: JIT queue contains %d beacons.\n", num_beacon);
+    printf("# INFO: JIT queue contains %d packets.\n", num_pkt);
+    printf("# INFO: JIT queue contains %d beacons.\n", num_beacon);
 }
 
 char *jit_error(enum jit_error_e error) {

@@ -1604,7 +1604,7 @@ void thread_up(void) {
 	}
 
     }
-    MSG("\nINFO: End of upstream thread\n");
+    MSG("INFO: End of upstream thread\n");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1706,7 +1706,7 @@ void thread_jit(void) {
         }
     }
 
-    MSG("\nINFO: End of JIT thread\n");
+    MSG("INFO: End of JIT thread\n");
 }
 
 
@@ -1857,7 +1857,7 @@ void thread_gps(void) {
             wr_idx -= LGW_GPS_MIN_MSG_SIZE;
         }
     }
-    MSG("\nINFO: End of GPS thread\n");
+    MSG("INFO: End of GPS thread\n");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1941,7 +1941,7 @@ void thread_valid(void) {
         }
         MSG_DEBUG(DEBUG_LOG,"Time ref: %s, XTAL correct: %s (%.15lf)\n", ref_valid_local?"valid":"invalid", xtal_correct_ok?"valid":"invalid", xtal_correct); // DEBUG
     }
-    MSG("\nINFO: End of validation thread\n");
+    MSG("INFO: End of validation thread\n");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1953,10 +1953,27 @@ void thread_watchdog(void) {
         wait_ms(30000);
 	// timestamp updated within the last 3 stat intervals? If not assume something is wrong and exit
 	if ((time(NULL) - last_loop) > (long int)((stat_interval * 3) + 5)) {
-		MSG("\nERROR: Watdog timer expired!\n");
+		MSG("ERROR: Watdog timer expired!\n");
 		exit(254);
 	}
     }
 }
+
+#include <stdarg.h>
+/* -- Debugging aid */
+void logmessage(const char *fmt, ... ) {
+    time_t t;
+    struct tm r;
+    va_list argp;
+
+    time(&t);
+    localtime_r(&t, &r);
+    printf("%02d:%02d:%02d  ",r.tm_hour,r.tm_min,r.tm_sec);
+
+    va_start(argp, fmt);
+    vprintf(fmt, argp);
+    va_end(argp);
+}
+
 
 /* --- EOF ------------------------------------------------------------------ */

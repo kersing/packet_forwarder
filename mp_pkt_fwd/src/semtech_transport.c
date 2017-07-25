@@ -1072,7 +1072,7 @@ void semtech_thread_down(void* pic) {
 	    transport_send_downtraf(json, ++buff_index);
         }
     }
-    MSG("\nINFO: End of downstream thread\n");
+    MSG("INFO: End of downstream thread\n");
 }
 
 void semtech_data_up(int idx, int nb_pkt, struct lgw_pkt_rx_s *rxpkt, bool send_report) {

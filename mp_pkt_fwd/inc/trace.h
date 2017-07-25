@@ -26,7 +26,10 @@ Maintainer: Michael Coracin
 #define DEBUG_FOLLOW    0
 
 
-#define MSG(args...) { printf(args) /* message that is destined to the user */; fflush(stdout); }
+//#define MSG(args...) { printf(args) /* message that is destined to the user */; fflush(stdout); }
+
+void logmessage(const char *, ...);
+#define MSG(args...) logmessage(args)
 
 #define MSG_DEBUG(FLAG, fmt, ...)                                                                         \
             do  {                                                                                         \
@@ -34,7 +37,8 @@ Maintainer: Michael Coracin
                     fprintf(stdout, "%s:%d:%s(): " fmt, __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__); \
             } while (0)
 
-#define LOGGER(args...) do { if (logger_enabled == true) printf(args); } while (0)
+//#define LOGGER(args...) do { if (logger_enabled == true) printf(args); } while (0)
+#define LOGGER(args...) do { if (logger_enabled == true) logmessage(args); } while (0)
 
 
 #endif

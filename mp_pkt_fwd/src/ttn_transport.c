@@ -327,6 +327,7 @@ void ttn_data_up(int idx, int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
 
 void ttn_connect(int idx) {
     int waittime = 0;
+    servers[idx].live = false;
     while (!exit_sig && !quit_sig) {
 	if (waittime == 0) {
 	    // wait 30 seconds for next attempt
@@ -346,6 +347,7 @@ void ttn_connect(int idx) {
 	int err = ttngwc_connect(servers[idx].ttn, servers[idx].addr, servers[idx].gw_port, servers[idx].gw_key);
 	if (err != 0) {
 	    MSG("ERROR: [TTN] Connection to server \"%s\" failed, retry in %d seconds\n",servers[idx].addr,waittime);
+	    ttngwc_disconnect(servers[idx].ttn);
 	    ttngwc_cleanup(servers[idx].ttn);
 	    servers[idx].live = false;
 	    continue;
@@ -354,8 +356,8 @@ void ttn_connect(int idx) {
     }
     if (!exit_sig && !quit_sig) {
 	MSG("INFO: [TTN] server \"%s\" connected\n",servers[idx].addr);
-        servers[idx].connecting = false;
 	servers[idx].live = true;
+        servers[idx].connecting = false;
 	// initiate ping request to get RTT
 	ttngwc_sendping(servers[idx].ttn);
     }
@@ -380,7 +382,7 @@ void ttn_reconnect(int idx) {
     servers[idx].connecting = true;
     servers[idx].live = false;
     pthread_mutex_unlock(&mx_queues);
-    MSG("INFO: [TTN] Reconnecting\n");
+    MSG("INFO: [TTN] Reconnecting %s\n",servers[idx].addr);
     ttngwc_disconnect(servers[idx].ttn);
     ttngwc_cleanup(servers[idx].ttn);
 
@@ -402,10 +404,13 @@ void ttn_upstream(void *pic) {
     struct tref local_ref;
     bool ref_ok = false;
     Queue *entry;
+    struct timespec wait_for;
 
     while (!exit_sig && !quit_sig) {
 	// wait for data to arrive
-    	sem_wait(&servers[idx].send_sem);
+	wait_for.tv_nsec = 0;
+	wait_for.tv_sec = time(NULL) + 10;
+    	sem_timedwait(&servers[idx].send_sem,&wait_for);
 
 	// check connection is up and running and we're not shutting down
 	if (servers[idx].live == false && !exit_sig && !quit_sig) {
@@ -603,10 +608,7 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
     long rtt;
 
     // do not try to send if not connected
-    if (servers[idx].live == false) {
-    	if (servers[idx].connecting) return;
-	else ttn_reconnect(idx);
-    }
+    if (servers[idx].live == false) return;
 
     rx_in_tot = rx_in_tot + rx_in;
     rx_ok_tot = rx_ok_tot + rx_ok;
