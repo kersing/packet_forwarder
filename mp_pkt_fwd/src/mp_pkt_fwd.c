@@ -1973,6 +1973,7 @@ void logmessage(const char *fmt, ... ) {
     va_start(argp, fmt);
     vprintf(fmt, argp);
     va_end(argp);
+    fflush(stdout);
 }
 
 
