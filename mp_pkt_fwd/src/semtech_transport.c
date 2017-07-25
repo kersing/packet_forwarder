@@ -455,6 +455,11 @@ void semtech_thread_down(void* pic) {
     enum jit_error_e jit_result = JIT_ERROR_OK;
     enum jit_pkt_type_e downlink_type;
 
+    /* gwtraf stream */
+    char json[100], iso_timestamp[24];
+    time_t system_time;
+    int j,buff_index;
+
     /* set downstream socket RX timeout */
 	i = setsockopt(servers[ic].sock_down, SOL_SOCKET, SO_RCVTIMEO, (void *)&pull_timeout, sizeof pull_timeout);
     if (i != 0) {
@@ -703,6 +708,15 @@ void semtech_thread_down(void* pic) {
                 continue;
             }
 
+	    /* start building gwtraf data */
+	    buff_index = 0;
+	    system_time = time(NULL);
+	    strftime(iso_timestamp, sizeof iso_timestamp, "%FT%TZ", gmtime(&system_time));
+	    j = snprintf((char *)(json + buff_index), 100-buff_index, "{\"type\":\"downlink\",\"gw\":\"%016llX\",\"time\":\"%s\",", (long long unsigned int) lgwm, iso_timestamp);
+	    if (j > 0) {
+		buff_index += j;
+	    }
+
             /* Parse "immediate" tag, or target timestamp, or UTC time to be converted by GPS (mandatory) */
             i = json_object_get_boolean(txpk_obj,"imme"); /* can be 1 if true, 0 if false, or -1 if not a JSON boolean */
             if (i == 1) {
@@ -719,6 +733,10 @@ void semtech_thread_down(void* pic) {
 
                     /* Concentrator timestamp is given, we consider it is a Class A downlink */
                     downlink_type = JIT_PKT_TYPE_DOWNLINK_CLASS_A;
+		    j = snprintf((json + buff_index), 100-buff_index, ",\"timestamp\":%d",txpkt.count_us);
+		    if (j > 0) {
+			buff_index += j;
+		    }
                 } else {
                     /* TX procedure: send on UTC time (converted to timestamp value) */
                     str = json_object_get_string(txpk_obj, "time");
@@ -776,6 +794,16 @@ void semtech_thread_down(void* pic) {
                     	LOGGER("INFO: [down] a packet will be sent on timestamp value %u (calculated from UTC time)\n", txpkt.count_us);
                     }
 
+		    j = snprintf((json + buff_index), 100-buff_index, ",\"timestamp\":%d",txpkt.count_us);
+		    if (j > 0) {
+			buff_index += j;
+		    }
+
+		    j = snprintf((json + buff_index), 100-buff_index, ",\"timestamp\":%d",txpkt.count_us);
+		    if (j > 0) {
+			buff_index += j;
+		    }
+
                     /* GPS timestamp is given, we consider it is a Class B downlink */
                     downlink_type = JIT_PKT_TYPE_DOWNLINK_CLASS_B;
                 }
@@ -795,6 +823,10 @@ void semtech_thread_down(void* pic) {
                 continue;
             }
             txpkt.freq_hz = (uint32_t)((double)(1.0e6) * json_value_get_number(val));
+	    j = snprintf((json + buff_index), 100-buff_index, ",\"frequency\":%d,",txpkt.freq_hz);
+	    if (j > 0) {
+		buff_index += j;
+	    }
 
             /* parse RF chain used for TX (mandatory) */
             val = json_object_get_value(txpk_obj,"rfch");
@@ -804,11 +836,19 @@ void semtech_thread_down(void* pic) {
                 continue;
             }
             txpkt.rf_chain = (uint8_t)json_value_get_number(val);
-
+	    j = snprintf((json + buff_index), 100-buff_index, ",\"rf_chain\":%d",txpkt.rf_chain);
+	    if (j > 0) {
+		buff_index += j;
+	    }
+		
             /* parse TX power (optional field) */
             val = json_object_get_value(txpk_obj,"powe");
             if (val != NULL) {
                 txpkt.rf_power = (int8_t)json_value_get_number(val) - antenna_gain;
+		j = snprintf((json + buff_index), 100-buff_index, ",\"rf_power\":%d",txpkt.rf_power);
+		if (j > 0) {
+		    buff_index += j;
+		}
             }
 
             /* Parse modulation (mandatory) */
@@ -829,6 +869,10 @@ void semtech_thread_down(void* pic) {
                     json_value_free(root_val);
                     continue;
                 }
+		j = snprintf((json + buff_index), 100-buff_index, ",\"modulation\":\"LORA\",\"data_rate\":\"%s\"",str);
+		if (j > 0) {
+		    buff_index += j;
+		}
                 i = sscanf(str, "SF%2hdBW%3hd", &x0, &x1);
                 if (i != 2) {
                 	LOGGER("WARNING: [down] format error in \"txpk.datr\", TX aborted\n");
@@ -864,6 +908,10 @@ void semtech_thread_down(void* pic) {
                     json_value_free(root_val);
                     continue;
                 }
+		j = snprintf((json + buff_index), 100-buff_index, "\"coding_rate\":\"%s\"", str);
+		if (j > 0) {
+		    buff_index += j;
+		}
                 if      (strcmp(str, "4/5") == 0) txpkt.coderate = CR_LORA_4_5;
                 else if (strcmp(str, "4/6") == 0) txpkt.coderate = CR_LORA_4_6;
                 else if (strcmp(str, "2/3") == 0) txpkt.coderate = CR_LORA_4_6;
@@ -945,6 +993,11 @@ void semtech_thread_down(void* pic) {
             }
             txpkt.size = (uint16_t)json_value_get_number(val);
 
+	    j = snprintf((json + buff_index), 100-buff_index, ",\"length\":%d", txpkt.size);
+	    if (j > 0) {
+		buff_index += j;
+	    }
+
             /* Parse payload data (mandatory) */
             str = json_object_get_string(txpk_obj, "data");
             if (str == NULL) {
@@ -1007,6 +1060,16 @@ void semtech_thread_down(void* pic) {
 
             /* Send acknowledge datagram to server */
             send_tx_ack(ic, buff_down[1], buff_down[2], jit_result);
+
+	    /* send to gwtraf */
+	    j = snprintf((json + buff_index), 100-buff_index, ",\"jit_result\":%d}", jit_result);
+	    if (j > 0) {
+		buff_index += j;
+	    }
+	    ++buff_index;
+	    /* end of JSON datagram payload */
+	    json[buff_index] = 0; /* add string terminator, for safety */
+	    transport_send_downtraf(json, ++buff_index);
         }
     }
     MSG("\nINFO: End of downstream thread\n");

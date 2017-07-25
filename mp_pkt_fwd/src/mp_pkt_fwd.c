@@ -227,6 +227,7 @@ static bool monitor_enabled     = false;   /* controls the activation access mod
 bool logger_enabled      = false;   /* controls the activation of more logging          */
 bool flush_enabled       = false;   /* flush output after statistics                    */
 bool flush_line          = false;   /* flush output after every line                    */
+bool wd_enabled		 = false;   /* watchdog enabled					*/
 
 /* TX capabilities */
 struct lgw_tx_gain_lut_s txlut; /* TX gain table */
@@ -245,6 +246,9 @@ char gateway_id[20]  = "";                /* string form of gateway mac address 
 char platform[24]    = DISPLAY_PLATFORM;  /* platform definition */
 char email[40]       = "";                /* used for contact email */
 char description[64] = "";                /* used for free form description */
+
+/* timestamp for watchdog */
+time_t last_loop;
 
 /* -------------------------------------------------------------------------- */
 /* --- MAC OSX Extensions  -------------------------------------------------- */
@@ -281,6 +285,7 @@ void thread_gps(void);
 void thread_valid(void);
 void thread_jit(void);
 void thread_timersync(void);
+void thread_watchdog(void);
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS DEFINITION ----------------------------------------- */
@@ -718,6 +723,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 		ic = 0;
 		for (i = 0; i < serv_count  && ic < MAX_SERVERS; i++) {
 			const char *vtype = NULL, *vgwid = NULL, *vgwkey = NULL;
+			JSON_Value *vcrit = NULL;
 			nw_server = json_array_get_object(confservers,i);
 			str = json_object_get_string(nw_server, "server_address");
 			val = json_object_get_value(nw_server, "serv_enabled");
@@ -729,6 +735,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 			vtype = json_object_get_string(nw_server, "serv_type");
 			vgwid = json_object_get_string(nw_server, "serv_gw_id");
 			vgwkey = json_object_get_string(nw_server, "serv_gw_key");
+			vcrit = json_object_get_value(nw_server, "critical");
 
 			/* Try to read the fields */
 			if (str != NULL)  snprintf(servers[ic].addr, sizeof servers[ic].addr, "%s",str);
@@ -737,6 +744,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 			if (val3 != NULL) servers[ic].max_stall = (int) json_value_get_number(val3); else servers[ic].max_stall = 0;
 			if (val4 != NULL) servers[ic].upstream = (bool) json_value_get_boolean(val4); 
 			if (val5 != NULL) servers[ic].downstream = (bool) json_value_get_boolean(val5); 
+			if (vcrit != NULL) servers[ic].critical = (bool) json_value_get_boolean(vcrit); 
 			/* If there is no server name we can only silently progress to the next entry */
 			if (str == NULL) {
 				continue;
@@ -746,6 +754,9 @@ static int parse_gateway_configuration(const char * conf_file) {
 				}
 				else if (!strncmp(vtype,"ttn",3)) {
 					servers[ic].type = ttn_gw_bridge;
+				}
+				else if (!strncmp(vtype,"gwtraf",6)) {
+					servers[ic].type = gwtraf;
 				}
 				else {
 					MSG("INFO: Skipping server \"%s\" with invalid server type\n", servers[ic].addr);
@@ -772,6 +783,14 @@ static int parse_gateway_configuration(const char * conf_file) {
 					continue;
 				} else {
 					strncpy(servers[ic].gw_key, vgwkey, sizeof servers[ic].gw_key);
+				}
+				if (strchr(servers[ic].addr,':') != NULL) {
+					// port specified
+					char *colpos = strchr(servers[ic].addr,':');
+					*colpos = 0;
+					servers[ic].gw_port = atoi(colpos+1);
+				} else {
+					servers[ic].gw_port = 1883;
 				}
 			}
 		        /* If the server was explicitly disabled, report and progress to the next entry */
@@ -1142,6 +1161,17 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Flush after each line of output is disabled\n");
     }
 
+	/* Read the value for watchdog data */
+	val = json_object_get_value(conf_obj, "watchdog");
+	if (json_value_get_type(val) == JSONBoolean) {
+		wd_enabled = (bool)json_value_get_boolean(val);
+	}
+	if (wd_enabled == true) {
+		MSG("INFO: Watchdog is enabled\n");
+	} else {
+		MSG("INFO: Watchdog is disabled\n");
+    }
+
 	/* Auto-quit threshold (optional) */
     val = json_object_get_value(conf_obj, "autoquit_threshold");
     if (val != NULL) {
@@ -1174,28 +1204,6 @@ static int parse_gateway_configuration(const char * conf_file) {
     json_value_free(root_val);
     return 0;
 }
-
-#if 0
-static uint8_t crc8_ccit(const uint8_t * data, unsigned size) {
-    const uint8_t crc_poly = 0x87; /* CCITT */
-    const uint8_t init_val = 0xFF; /* CCITT */
-    uint8_t x = init_val;
-    unsigned i, j;
-
-    if (data == NULL)  {
-        return 0;
-    }
-
-    for (i=0; i<size; ++i) {
-        x ^= data[i];
-        for (j=0; j<8; ++j) {
-            x = (x & 0x80) ? (x<<1) ^ crc_poly : (x<<1);
-        }
-    }
-
-    return x;
-}
-#endif
 
 double difftimespec(struct timespec end, struct timespec beginning) {
     double x;
@@ -1248,6 +1256,7 @@ int main(int argc, char *argv[])
     pthread_t thrid_valid;
     pthread_t thrid_jit;
     pthread_t thrid_timersync;
+    pthread_t thrid_watchdog;
 
     /* fields to store the moment of activation. */
     time_t current_time = time(NULL);
@@ -1278,7 +1287,7 @@ int main(int argc, char *argv[])
     int logfile_fd;
     FILE *logfile = NULL;
     if (logfile_path) {
-        logfile = fopen(logfile_path, "w");
+        logfile = fopen(logfile_path, "a");
 	if (logfile) {
 	    logfile_fd = fileno(logfile);
 	    dup2(logfile_fd, STDOUT_FILENO);
@@ -1459,6 +1468,16 @@ int main(int argc, char *argv[])
     	MSG("WARNING: [main] All streams have been disabled, gateway may be completely silent.\n");
     }
 
+    /* spawn thread for watchdog */
+    if (wd_enabled == true) {
+	last_loop = time(NULL);
+        i = pthread_create( &thrid_watchdog, NULL, (void * (*)(void *))thread_watchdog, NULL);
+        if (i != 0) {
+            MSG("ERROR: [main] impossible to create watchdog thread\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
     /* main loop task : statistics transmission */
     while (!exit_sig && !quit_sig) {
         /* wait for next reporting interval */
@@ -1489,6 +1508,8 @@ int main(int argc, char *argv[])
 	      } 
 	    }
 
+	    last_loop = time(NULL);
+
 	    /* Code of gonzalocasas to catch transient hardware failures */
 		uint32_t trig_cnt_us;
 		pthread_mutex_lock(&mx_concent);
@@ -1498,6 +1519,8 @@ int main(int argc, char *argv[])
 		}
 		pthread_mutex_unlock(&mx_concent);
 	}
+    /* disable watchdog */
+    if (wd_enabled == true) pthread_cancel(thrid_watchdog);
 
     /* wait for upstream thread to finish (1 fetch cycle max) */
 	if (upstream_enabled == true) pthread_join(thrid_up, NULL);
@@ -1551,10 +1574,10 @@ void thread_up(void) {
         pthread_mutex_lock(&mx_concent);
 		if (radiostream_enabled == true) nb_pkt = lgw_receive(NB_PKT_MAX, rxpkt); else nb_pkt = 0;
 		if (ghoststream_enabled == true) nb_pkt = ghost_get(NB_PKT_MAX-nb_pkt, &rxpkt[nb_pkt]) + nb_pkt;
+        pthread_mutex_unlock(&mx_concent);
 
 
         //TODO this test should in fact be before the ghost packets are collected.
-        pthread_mutex_unlock(&mx_concent);
         if (nb_pkt == LGW_HAL_ERROR) {
             MSG("ERROR: [up] failed packet fetch, exiting\n");
             exit(EXIT_FAILURE);
@@ -1642,7 +1665,9 @@ void thread_jit(void) {
                     }
 
                     /* check if concentrator is free for sending new packet */
+		    pthread_mutex_lock(&mx_concent);
                     result = lgw_status(TX_STATUS, &tx_status);
+		    pthread_mutex_unlock(&mx_concent);
                     if (result == LGW_HAL_ERROR) {
                     	LOGGER("WARNING: [jit] lgw_status failed\n");
                     } else {
@@ -1755,7 +1780,7 @@ void thread_gps(void) {
         /* blocking non-canonical read on serial port */
         ssize_t nb_char = read(gps_tty_fd, serial_buff + wr_idx, LGW_GPS_MIN_MSG_SIZE);
         if (nb_char <= 0) {
-            MSG("WARNING: [gps] read() returned value %d\n", nb_char);
+            MSG("WARNING: [gps] read() returned value %ld\n", nb_char);
             continue;
         }
         wr_idx += (size_t)nb_char;
@@ -1917,6 +1942,21 @@ void thread_valid(void) {
         MSG_DEBUG(DEBUG_LOG,"Time ref: %s, XTAL correct: %s (%.15lf)\n", ref_valid_local?"valid":"invalid", xtal_correct_ok?"valid":"invalid", xtal_correct); // DEBUG
     }
     MSG("\nINFO: End of validation thread\n");
+}
+
+/* -------------------------------------------------------------------------- */
+/* --- THREAD 6: WATCHDOG TO CHECK IF THE SOFTWARE ACTUALLY FORWARDS DATA --- */
+
+void thread_watchdog(void) {
+    /* main loop task */
+    while (!exit_sig && !quit_sig) {
+        wait_ms(30000);
+	// timestamp updated within the last 3 stat intervals? If not assume something is wrong and exit
+	if ((time(NULL) - last_loop) > (long int)((stat_interval * 3) + 5)) {
+		MSG("\nERROR: Watdog timer expired!\n");
+		exit(254);
+	}
+    }
 }
 
 /* --- EOF ------------------------------------------------------------------ */

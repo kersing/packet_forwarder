@@ -29,6 +29,7 @@
 #include "transport.h"
 #include "semtech_transport.h"
 #include "ttn_transport.h"
+#include "gwtraf_transport.h"
 
 extern int serv_count;
 extern Server servers[];
@@ -49,6 +50,8 @@ void transport_init() {
 		servers[i].downstream = true;
 		servers[i].statusstream = true;
 		servers[i].live = false;
+		servers[i].connecting = false;
+		servers[i].critical = true;
 		servers[i].sock_up = -1;
 		servers[i].sock_down = -1;
 		servers[i].queue = NULL;
@@ -68,6 +71,9 @@ void transport_start() {
 				case ttn_gw_bridge:
 					ttn_init(i);
 					break;
+				case gwtraf:
+					gwtraf_init(i);
+					break;
 			}
 		}
 	}
@@ -83,6 +89,9 @@ void transport_stop() {
 					break;
 				case ttn_gw_bridge:
 					ttn_stop(i);
+					break;
+				case gwtraf:
+					gwtraf_stop(i);
 					break;
 			}
 		}
@@ -100,6 +109,9 @@ void transport_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt, bool send_report)
 				case ttn_gw_bridge:
 					ttn_data_up(i, nb_pkt, rxpkt);
 					break;
+				case gwtraf:
+					gwtraf_data_up(i, nb_pkt, rxpkt);
+					break;
 			}
 		}
 	}
@@ -110,6 +122,15 @@ void transport_status_up(uint32_t rx_rcv,uint32_t rx_ok,uint32_t tx_tot,uint32_t
 	for (i = 0; i < MAX_SERVERS; i++) {
 		if (servers[i].enabled == true && servers[i].type == ttn_gw_bridge && servers[i].statusstream == true) {
 			ttn_status_up(i, rx_rcv, rx_ok, tx_tot, tx_ok);
+		}
+	}
+}
+
+void transport_send_downtraf(char *json, int len) {
+	int i;
+	for (i = 0; i < MAX_SERVERS; i++) {
+		if (servers[i].enabled == true && servers[i].type == gwtraf) {
+			gwtraf_downtraf(i, json, len);
 		}
 	}
 }

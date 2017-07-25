@@ -10,7 +10,8 @@
 #define _TRANSPORT_H
 enum server_type {
     semtech,
-    ttn_gw_bridge
+    ttn_gw_bridge,
+    gwtraf
 } ;
 
 struct _queue {
@@ -34,7 +35,10 @@ struct _server {
     int  max_stall;         // max number of missed responses
     char gw_id[64];         // gateway ID for TTN
     char gw_key[200];       // gateway key to connect to TTN
+    int  gw_port;	    // gateway port
     bool live;              // Server is life?
+    bool connecting;	    // Connection setup in progress
+    bool critical;	    // Transport critical? Should connect at startup?
     int  sock_up;           // Semtech up socket
     int  sock_down;         // Semtech down socket
     sem_t send_sem;         // semaphore for sending data
@@ -51,6 +55,7 @@ void transport_start();
 void transport_stop();
 void transport_data_up(int nb_pkt, struct lgw_pkt_rx_s *rxpkt, bool send_report);
 void transport_status_up(uint32_t, uint32_t, uint32_t, uint32_t);
+void transport_send_downtraf(char *json, int len);
 #endif // _TRANSPORT_H
 
 

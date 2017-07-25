@@ -55,6 +55,7 @@ extern bool fwd_nocrc_pkt;
 
 extern volatile bool exit_sig;
 extern volatile bool quit_sig;
+extern uint64_t lgwm;
 
 /* TX capabilities */
 extern struct lgw_tx_gain_lut_s txlut; /* TX gain table */
@@ -87,10 +88,15 @@ void ttn_init(int idx) {
     // Create upstream thread and connect
     int i = pthread_create( &servers[idx].t_up, NULL, (void * (*)(void *))ttn_upstream, (void *) (long) idx);
     if (i != 0) {
-	MSG("ERROR: [ttn] failed to create upstream thread for server \"%s\"\n",servers[i].addr);
+	MSG("ERROR: [TTN] failed to create upstream thread for server \"%s\"\n",servers[i].addr);
 	exit(EXIT_FAILURE);
     }
-    ttn_connect(idx);
+    if (servers[idx].critical) {
+        servers[idx].connecting = true;
+	ttn_connect(idx);
+    } else {
+        servers[idx].live = false;
+    }
 }
 
 void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *arg) {
@@ -100,8 +106,9 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
     enum jit_error_e jit_result = JIT_ERROR_OK;
     struct timeval current_unix_time;
     struct timeval current_concentrator_time;
-    
-    int i;
+    char json[100], iso_timestamp[24];
+    time_t system_time; 
+    int i,j,buff_index;
     short x0, x1;
 
     MSG("INFO: [down] TTN received downlink %s\n",msg->has_payload ? "with payload" : "empty???");
@@ -115,13 +122,30 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 
 		    // clear transmit packet
 		    memset(&txpkt, 0, sizeof txpkt);
+		    buff_index = 0;
+		    system_time = time(NULL);
+		    strftime(iso_timestamp, sizeof iso_timestamp, "%FT%TZ", gmtime(&system_time));
+		    j = snprintf((char *)(json + buff_index), 100-buff_index, "{\"type\":\"downlink\",\"gw\":\"%016llX\",\"time\":\"%s\",", (long long unsigned int) lgwm, iso_timestamp);
+		    if (j > 0) {
+			buff_index += j;
+		    }
+
 		    if (gtw->timestamp) {
 			txpkt.count_us = gtw->timestamp;
 			downlink_type = JIT_PKT_TYPE_DOWNLINK_CLASS_A;
+		        j = snprintf((json + buff_index), 100-buff_index, ",\"timestamp\":%d",txpkt.count_us);
+			if (j > 0) {
+			    buff_index += j;
+			}
 		    }
 		    txpkt.freq_hz = gtw->frequency;
 		    txpkt.rf_chain = gtw->rf_chain;
 		    txpkt.rf_power = gtw->power - antenna_gain;
+		    j = snprintf((json + buff_index), 100-buff_index, ",\"frequency\":%d,\"rf_chain\":%d,\"rf_power\":%d",
+		    	txpkt.freq_hz,txpkt.rf_chain,txpkt.rf_power);
+		    if (j > 0) {
+			buff_index += j;
+		    }
 
 		    if (lora->modulation == LORAWAN__MODULATION__LORA) {
 			txpkt.modulation = MOD_LORA;
@@ -161,6 +185,12 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 			} 
 			txpkt.invert_pol = gtw->polarization_inversion;
 			txpkt.preamble = (uint16_t)STD_LORA_PREAMB;
+			j = snprintf((json + buff_index), 100-buff_index, 
+			    ",\"modulation\":\"LORA\",\"data_rate\":\"%s\",\"coding_rate\":\"%s\"",
+			    lora->data_rate,lora->coding_rate);
+			if (j > 0) {
+			    buff_index += j;
+			}
 		    } else if (lora->modulation == LORAWAN__MODULATION__FSK) {
 			txpkt.modulation = MOD_FSK;
 			if (!lora->has_bit_rate) {
@@ -181,6 +211,12 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 
 		    txpkt.size = msg->payload.len;
 		    memcpy(txpkt.payload, msg->payload.data, txpkt.size < sizeof txpkt.payload ? txpkt.size : sizeof txpkt.payload);
+		    j = snprintf((json + buff_index), 100-buff_index, 
+			",\"length\":%d", txpkt.size);
+		    if (j > 0) {
+			buff_index += j;
+		    }
+
 		    /* select TX mode */
 		    if (sent_immediate) {
 			txpkt.tx_mode = IMMEDIATE;
@@ -235,6 +271,16 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 			}
 			increment_down(TX_REQUESTED);
 		    }
+
+		    j = snprintf((json + buff_index), 100-buff_index, 
+			",\"jit_result\":%d}", jit_result);
+		    if (j > 0) {
+			buff_index += j;
+		    }
+		    ++buff_index;
+		    /* end of JSON datagram payload */
+		    json[buff_index] = 0; /* add string terminator, for safety */
+		    transport_send_downtraf(json, ++buff_index);
 		}
 		break;
 	    default:
@@ -297,7 +343,7 @@ void ttn_connect(int idx) {
 	    // Will this ever recover? Retry anyway...
 	    continue;
 	}
-	int err = ttngwc_connect(servers[idx].ttn, servers[idx].addr, 1883, servers[idx].gw_key);
+	int err = ttngwc_connect(servers[idx].ttn, servers[idx].addr, servers[idx].gw_port, servers[idx].gw_key);
 	if (err != 0) {
 	    MSG("ERROR: [TTN] Connection to server \"%s\" failed, retry in %d seconds\n",servers[idx].addr,waittime);
 	    ttngwc_cleanup(servers[idx].ttn);
@@ -308,7 +354,10 @@ void ttn_connect(int idx) {
     }
     if (!exit_sig && !quit_sig) {
 	MSG("INFO: [TTN] server \"%s\" connected\n",servers[idx].addr);
+        servers[idx].connecting = false;
 	servers[idx].live = true;
+	// initiate ping request to get RTT
+	ttngwc_sendping(servers[idx].ttn);
     }
 }
 
@@ -322,7 +371,15 @@ void ttn_stop(int idx) {
 }
 
 void ttn_reconnect(int idx) {
+    pthread_mutex_lock(&mx_queues);
+    if (servers[idx].connecting) {
+    	// Already recovering connection, ignore this request
+	pthread_mutex_unlock(&mx_queues);
+	return;
+    }
+    servers[idx].connecting = true;
     servers[idx].live = false;
+    pthread_mutex_unlock(&mx_queues);
     MSG("INFO: [TTN] Reconnecting\n");
     ttngwc_disconnect(servers[idx].ttn);
     ttngwc_cleanup(servers[idx].ttn);
@@ -543,9 +600,13 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
     static uint32_t rx_in_tot = 0;
     static uint32_t rx_ok_tot = 0;
     struct timespec pkt_utc_time;
+    long rtt;
 
     // do not try to send if not connected
-    if (servers[idx].live == false) return;
+    if (servers[idx].live == false) {
+    	if (servers[idx].connecting) return;
+	else ttn_reconnect(idx);
+    }
 
     rx_in_tot = rx_in_tot + rx_in;
     rx_ok_tot = rx_ok_tot + rx_ok;
@@ -582,6 +643,15 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
     status.tx_in = tx_in_tot;
     status.has_tx_ok = 1;
     status.tx_ok = tx_ok_tot;
+
+    rtt = ttngwc_getrtt(servers[idx].ttn);
+    if (rtt != -1) {
+        status.has_rtt = 1;
+	status.rtt = rtt;
+	MSG("INFO: [TTN] %s RTT %ld\n",servers[idx].addr, rtt);
+    }
+
+    status.hal = lgw_version_info();
 
 #ifdef MTECH
     // Get gateway temperature if available
@@ -648,11 +718,14 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
 
     err = ttngwc_send_status(servers[idx].ttn, &status);
     if (err) {
-	MSG("ERROR: [status] TTN send status failed\n");
+	MSG("ERROR: [TTN] send status failed for %s\n",servers[idx].addr);
 	ttn_reconnect(idx);
     }
-    else
-	MSG("INFO: [status] TTN send status success\n");
+    else {
+	MSG("INFO: [TTN] send status success for %s\n",servers[idx].addr);
+	// initiate ping request to update RTT
+	ttngwc_sendping(servers[idx].ttn);
+    }
 }
 
 // vi: sw=4 ai
