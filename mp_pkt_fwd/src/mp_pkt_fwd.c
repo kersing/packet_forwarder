@@ -65,6 +65,7 @@ Modifications for multi protocol use: Jac Kersing
 #include "loragw_gps.h"
 #include "loragw_aux.h"
 #include "loragw_reg.h"
+#include "config.h"
 #include "mp_pkt_fwd.h"
 #include "ghost.h"
 #include "monitor.h"
@@ -249,6 +250,13 @@ char description[64] = "";                /* used for free form description */
 
 /* timestamp for watchdog */
 time_t last_loop;
+
+/* SPI speed variable */
+#if CFG_SPI_FTDI
+long spi_speed = 6000000;
+#else
+long spi_speed = SPI_SPEED;
+#endif
 
 /* -------------------------------------------------------------------------- */
 /* --- MAC OSX Extensions  -------------------------------------------------- */
@@ -1215,14 +1223,15 @@ double difftimespec(struct timespec end, struct timespec beginning) {
 }
 
 void usage(char *proc_name) {
-	fprintf(stderr, "Usage: %s [-c config_dir] [-l logfile]\n", proc_name);
+	fprintf(stderr, "Usage: %s [-c config_dir] [-l logfile] [-s spi speed in hz]\n", proc_name);
 	exit(1);
 }
 
-static char *short_options = "c:l:h";
+static char *short_options = "c:l:s:h";
 static struct option long_options[] = {
         {"config-dir", 1, 0, 'c'},
         {"logfile", 1, 0, 'l'},
+        {"speed", 1, 0, 's'},
         {"help", 0, 0, 'h'},
         {0, 0, 0, 0},
 };
@@ -1273,6 +1282,12 @@ int main(int argc, char *argv[])
 	  case 'l':
 	       logfile_path = optarg;
 	       break;
+          case 's':
+               spi_speed = atol(optarg);
+	       if (spi_speed == 0L) {
+		   printf("Error: specified SPI speed is invalid\n");
+		   exit(1);
+               }
 	  default:
 	       usage(proc_name);
 	       break;
@@ -1381,7 +1396,7 @@ int main(int argc, char *argv[])
     /* starting the concentrator */
 	if (radiostream_enabled == true) {
 		MSG("INFO: [main] Starting the concentrator\n");
-    i = lgw_start();
+    i = lgw_start(spi_speed);
     if (i == LGW_HAL_SUCCESS) {
 			MSG("INFO: [main] concentrator started, radio packets can now be received.\n");
     } else {
