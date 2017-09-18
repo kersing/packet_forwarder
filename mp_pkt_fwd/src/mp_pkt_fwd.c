@@ -1288,6 +1288,7 @@ int main(int argc, char *argv[])
 		   printf("Error: specified SPI speed is invalid\n");
 		   exit(1);
                }
+	       break;
 	  default:
 	       usage(proc_name);
 	       break;
