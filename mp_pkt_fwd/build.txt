@@ -1,11 +1,12 @@
+For Raspberry Pi use build-pi.sh
 (Unsupported) build instructions:
 
 1. Get the required sources:
-git clone git@github.com:kersing/lora_gateway.git
-git clone git@github.com:kersing/paho.mqtt.embedded-c.git
-git clone git@github.com:kersing/ttn-gateway-connector.git
-git clone git@github.com:kersing/protobuf-c.git
-git clone git@github.com:kersing/packet_forwarder.git
+git clone https://github.com/kersing/lora_gateway.git
+git clone https://github.com/kersing/paho.mqtt.embedded-c.git
+git clone https://github.com/kersing/ttn-gateway-connector.git
+git clone https://github.com/kersing/protobuf-c.git
+git clone https://github.com/kersing/packet_forwarder.git
 git clone https://github.com/google/protobuf.git
 
 2. Install protobuf build dependencies
