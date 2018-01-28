@@ -364,6 +364,10 @@ void ttn_connect(int idx) {
 	break; 
     }
     if (!exit_sig && !quit_sig) {
+	if (ttngwc_checkconnected(servers[idx].ttn) < 1) {
+	    MSG("ERROR: Not connected when connection should be life\n");
+	    exit(1);
+	}
 	MSG("INFO: [TTN] server \"%s\" connected\n",servers[idx].addr);
 	servers[idx].live = true;
         servers[idx].connecting = false;
