@@ -1033,18 +1033,19 @@ void semtech_thread_down(void* pic) {
                 jit_result = JIT_ERROR_TX_FREQ;
                 LOGGER("ERROR: Packet REJECTED, unsupported frequency - %u (min:%u,max:%u)\n", txpkt.freq_hz, tx_freq_min[txpkt.rf_chain], tx_freq_max[txpkt.rf_chain]);
             }
+
             if (jit_result == JIT_ERROR_OK) {
+		int pwr_level = -100;
                 for (i=0; i<txlut.size; i++) {
-                    if (txlut.lut[i].rf_power == txpkt.rf_power) {
-                        /* this RF power is supported, we can continue */
-                        break;
+                    if (txlut.lut[i].rf_power <= txpkt.rf_power &&
+			  pwr_level < txlut.lut[i].rf_power) {
+			pwr_level = txlut.lut[i].rf_power;
                     }
                 }
-                if (i == txlut.size) {
-                    /* this RF power is not supported */
-                    jit_result = JIT_ERROR_TX_POWER;
-                    LOGGER("ERROR: Packet REJECTED, unsupported RF power for TX - %d\n", txpkt.rf_power);
-                }
+		if (pwr_level != txpkt.rf_power) {
+		    LOGGER("INFO: RF Power adjusted to %d from %d\n", pwr_level, txpkt.rf_power);
+		    txpkt.rf_power = pwr_level;
+		}
             }
 
             /* insert packet to be sent into JIT queue */
