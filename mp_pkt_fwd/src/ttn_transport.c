@@ -365,7 +365,7 @@ void ttn_connect(int idx) {
     }
     if (!exit_sig && !quit_sig) {
 	if (ttngwc_checkconnected(servers[idx].ttn) < 1) {
-	    MSG("ERROR: Not connected when connection should be life\n");
+	    MSG("ERROR: Not connected when connection should be live\n");
 	    exit(1);
 	}
 	MSG("INFO: [TTN] server \"%s\" connected\n",servers[idx].addr);
@@ -439,6 +439,7 @@ void ttn_upstream(void *pic) {
 	    // but somehow are not
 	    MSG("ERROR: [TTN] Connection state failure\n");
 	    ttn_reconnect(idx);
+	    continue;
 	}
 
 	// dequeue data
