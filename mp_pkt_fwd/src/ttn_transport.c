@@ -86,16 +86,17 @@ extern Server servers[];
 
 void ttn_init(int idx) {
     // Create upstream thread and connect
-    int i = pthread_create( &servers[idx].t_up, NULL, (void * (*)(void *))ttn_upstream, (void *) (long) idx);
-    if (i != 0) {
-	MSG("ERROR: [TTN] failed to create upstream thread for server \"%s\"\n",servers[i].addr);
-	exit(EXIT_FAILURE);
-    }
     if (servers[idx].critical) {
         servers[idx].connecting = true;
 	ttn_connect(idx);
     } else {
         servers[idx].live = false;
+    }
+
+    int i = pthread_create( &servers[idx].t_up, NULL, (void * (*)(void *))ttn_upstream, (void *) (long) idx);
+    if (i != 0) {
+	MSG("ERROR: [TTN] failed to create upstream thread for server \"%s\"\n",servers[i].addr);
+	exit(EXIT_FAILURE);
     }
 }
 
@@ -433,7 +434,7 @@ void ttn_upstream(void *pic) {
 
 	// Fail-save check??
 	err = ttngwc_checkconnected(servers[idx].ttn);
-	MSG_DEBUG(DEBUG_PKT_FWD,"ttn_upstream: connected %d, live %d, connecting %d\n",err,servers[idx].live,servers[idx].connecting);
+	//MSG_DEBUG(DEBUG_PKT_FWD,"ttn_upstream: connected %d, live %d, connecting %d\n",err,servers[idx].live,servers[idx].connecting);
 	if ((servers[idx].live == true && err != 1) || (servers[idx].connecting == false && err == 0)) {
 	    // Something is seriously messed up, we're supposed to be connected or connecting
 	    // but somehow are not
@@ -753,6 +754,11 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
 	// initiate ping request to update RTT
 	ttngwc_sendping(servers[idx].ttn);
     }
+}
+
+void ttn_status(int idx) {
+    printf("# %s: %s\n",servers[idx].addr, servers[idx].connecting ? "Connecting" : 
+    	!servers[idx].live ? "Unknown status" : ttngwc_checkconnected(servers[idx].ttn) ? "Connected" : "Broken connection");
 }
 
 // vi: sw=4 ai

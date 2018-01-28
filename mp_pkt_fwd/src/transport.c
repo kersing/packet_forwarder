@@ -126,6 +126,15 @@ void transport_status_up(uint32_t rx_rcv,uint32_t rx_ok,uint32_t tx_tot,uint32_t
 	}
 }
 
+void transport_status() {
+	int i;
+	for (i = 0; i < MAX_SERVERS; i++) {
+		if (servers[i].enabled == true && servers[i].type == ttn_gw_bridge) {
+			ttn_status(i);
+		}
+	}
+}
+
 void transport_send_downtraf(char *json, int len) {
 	int i;
 	for (i = 0; i < MAX_SERVERS; i++) {

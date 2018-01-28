@@ -524,6 +524,8 @@ void stats_report() {
      		printf("# Downstream beacon transmission quality: %.2f%%.\n",100*move_dw_beacon_quality);
      	}
 
+	printf("### [ CONNECTIONS ] ###\n");
+	transport_status(i);
 
         /* generate a JSON report (will be sent to server by upstream thread) */
 
