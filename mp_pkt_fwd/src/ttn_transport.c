@@ -333,7 +333,16 @@ void ttn_connect(int idx) {
 	    // wait 30 seconds for next attempt
 	    waittime = 30;
 	} else {
+#if DEBUG_PKT_FWD > 0
+	    int t = 0;
+	    while (t < waittime) {
+	    	MSG_DEBUG(DEBUG_PKT_FWD,"ttn_connect: sleeping() at %d, total %d\n",t,waittime);
+		sleep(10);
+		t += 10;
+	    }
+#else	    
 	    sleep(waittime);
+#endif
 	    if (waittime < 300) waittime = 2 * waittime;
 	}
 	ttngwc_init(&servers[idx].ttn, servers[idx].gw_id, 
@@ -376,6 +385,7 @@ void ttn_reconnect(int idx) {
     pthread_mutex_lock(&mx_queues);
     if (servers[idx].connecting) {
     	// Already recovering connection, ignore this request
+	MSG("INFO: [TTN] reconnect called while reconnecting\n");
 	pthread_mutex_unlock(&mx_queues);
 	return;
     }
@@ -415,6 +425,16 @@ void ttn_upstream(void *pic) {
 	// check connection is up and running and we're not shutting down
 	if (servers[idx].live == false && !exit_sig && !quit_sig) {
 	    ttn_connect(idx);
+	}
+
+	// Fail-save check??
+	err = ttngwc_checkconnected(servers[idx].ttn);
+	MSG_DEBUG(DEBUG_PKT_FWD,"ttn_upstream: connected %d, live %d, connecting %d\n",err,servers[idx].live,servers[idx].connecting);
+	if ((servers[idx].live == true && err != 1) || (servers[idx].connecting == false && err == 0)) {
+	    // Something is seriously messed up, we're supposed to be connected or connecting
+	    // but somehow are not
+	    MSG("ERROR: [TTN] Connection state failure\n");
+	    ttn_reconnect(idx);
 	}
 
 	// dequeue data

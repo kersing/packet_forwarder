@@ -258,6 +258,9 @@ long spi_speed = 6000000;
 long spi_speed = SPI_SPEED;
 #endif
 
+/* path to logfile */
+char *logfile_path = NULL;
+
 /* -------------------------------------------------------------------------- */
 /* --- MAC OSX Extensions  -------------------------------------------------- */
 
@@ -1236,12 +1239,33 @@ static struct option long_options[] = {
         {0, 0, 0, 0},
 };
 
+void sighup_handler() {
+    int logfile_fd;
+    int old_logfile_fd = -1;
+
+    FILE *logfile = NULL;
+    if (logfile_path) {
+        logfile = fopen(logfile_path, "a");
+	if (logfile) {
+            dup2(STDOUT_FILENO, old_logfile_fd);
+	    logfile_fd = fileno(logfile);
+	    dup2(logfile_fd, STDOUT_FILENO);
+	    dup2(logfile_fd, STDERR_FILENO);
+	    close(old_logfile_fd);
+	} else {
+	    printf("Error opening log file %s\n", logfile_path);
+	    exit(1);
+	}
+    }
+}
+
 /* -------------------------------------------------------------------------- */
 /* --- MAIN FUNCTION -------------------------------------------------------- */
 
 int main(int argc, char *argv[])
 {
     struct sigaction sigact; /* SIGQUIT&SIGINT&SIGTERM signal handling */
+    struct sigaction sighupact; /* SIGHUP signal handling */
     int i; /* loop variable and temporary variable for return value */
     int ic; /* Server loop variable */
 
@@ -1256,7 +1280,6 @@ int main(int argc, char *argv[])
     char global_cfg_path[PATH_MAX] = {0};
     char local_cfg_path[PATH_MAX] = {0};
     char debug_cfg_path[PATH_MAX] = {0};
-    char *logfile_path = NULL;
     char *proc_name = argv[0];
 
     /* threads */
@@ -1280,7 +1303,11 @@ int main(int argc, char *argv[])
 	       strcat(cfg_dir, "/");
 	       break;
 	  case 'l':
-	       logfile_path = optarg;
+	       logfile_path = strdup(optarg);
+	       if (logfile_path == NULL) {
+		   printf("Error: can't save logfile name\n");
+		   exit(1);
+               }
 	       break;
           case 's':
                spi_speed = atol(optarg);
@@ -1466,6 +1493,13 @@ int main(int argc, char *argv[])
     sigaction(SIGQUIT, &sigact, NULL); /* Ctrl-\ */
     sigaction(SIGINT, &sigact, NULL); /* Ctrl-C */
     sigaction(SIGTERM, &sigact, NULL); /* default "kill" command */
+    sigaction(SIGQUIT, &sigact, NULL); /* Ctrl-\ */
+
+    sigemptyset(&sighupact.sa_mask);
+    sighupact.sa_flags = 0;
+    sighupact.sa_handler = sighup_handler;
+    sigaction(SIGHUP, &sighupact, NULL); /* rotate logfile on HUP */
+    signal(SIGPIPE, SIG_IGN);	/* ignore writes after closing socket */
 
 	/* Start the ghost Listener */
     if (ghoststream_enabled == true) {
