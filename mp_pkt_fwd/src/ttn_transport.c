@@ -342,6 +342,7 @@ void ttn_connect(int idx) {
 
     fprintf(debugLog,"Connect start for %s\n",servers[idx].addr);
     while (!exit_sig && !quit_sig) {
+fprintf(debugLog,"In connect loop sleep %s\n",servers[idx].addr);
 	if (waittime == 0) {
 	    // wait 30 seconds for next attempt
 	    waittime = 30;
@@ -365,7 +366,6 @@ fprintf(debugLog,"Connect ttngwc_init for %s\n",servers[idx].addr);
 	if (!servers[idx].ttn) {
 fprintf(debugLog,"Connect ttngwc_init failed for %s\n",servers[idx].addr);
 	    MSG("ERROR: [TTN] Initialize server \"%s\" failed, retry in %d seconds\n",servers[idx].addr,waittime);
-	    servers[idx].live = false;
 	    // Will this ever recover? Retry anyway...
 	    continue;
 	}
@@ -375,9 +375,11 @@ fprintf(debugLog,"Connect ttngwc_connect for %s\n",servers[idx].addr);
 	if (err != 0) {
 fprintf(debugLog,"Connect ttngwc_connect failed for %s\n",servers[idx].addr);
 	    MSG("ERROR: [TTN] Connection to server \"%s\" failed, retry in %d seconds\n",servers[idx].addr,waittime);
+fprintf(debugLog,"Connect calling ttngwc_disconnect for %s\n",servers[idx].addr);
 	    ttngwc_disconnect(servers[idx].ttn);
+fprintf(debugLog,"Connect calling ttngwc_cleanup for %s\n",servers[idx].addr);
 	    ttngwc_cleanup(servers[idx].ttn);
-	    servers[idx].live = false;
+fprintf(debugLog,"Connect post call ttngwc_cleanup for %s\n",servers[idx].addr);
 	    continue;
 	}
 fprintf(debugLog,"Connect ttngwc_connect success for %s\n",servers[idx].addr);
@@ -416,6 +418,7 @@ fprintf(debugLog,"Reconnect already active for %s\n",servers[idx].addr);
     	// Already recovering connection, ignore this request
 	MSG("INFO: [TTN] reconnect called while reconnecting\n");
 	pthread_mutex_unlock(&mx_queues);
+fprintf(debugLog,"Reconnect already active for %s unlocked\n",servers[idx].addr);
 	return;
     }
 fprintf(debugLog,"Reconnect set connecting for %s\n",servers[idx].addr);
