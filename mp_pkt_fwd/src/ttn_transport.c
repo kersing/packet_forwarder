@@ -94,6 +94,10 @@ void _debug_log(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
 
 void _debug_log(const char *fmt, ...) {
     va_list arg;
+    time_t t;
+
+    t = time(NULL);
+    fprintf(debugLog, "%ld: ", t);
 
     /* Write the error message */
     va_start(arg, fmt);

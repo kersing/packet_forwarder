@@ -62,7 +62,6 @@ Modifications for multi protocol use: Jac Kersing
 #include "loragw_reg.h"
 #include "mp_pkt_fwd.h"
 #include "ghost.h"
-#include "monitor.h"
 #include "connector.h"
 #include "transport.h"
 #include "semtech_transport.h"
