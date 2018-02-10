@@ -68,7 +68,6 @@ Modifications for multi protocol use: Jac Kersing
 #include "config.h"
 #include "mp_pkt_fwd.h"
 #include "ghost.h"
-#include "monitor.h"
 #include "semtech_transport.h"
 #include "connector.h"
 #include "ttn_transport.h"
@@ -214,17 +213,12 @@ int stat_damping = 50;                   /* default damping for statistical valu
 /* Just In Time TX scheduling */
 struct jit_queue_s jit_queue;
 
-//TODO: This default values are a code-smell, remove.
-static char monitor_addr[64] = "127.0.0.1"; /* address of the server (host name or IPv4/IPv6) */
-static char monitor_port[8]  = "2008";      /* port to listen on */
-
 /* Gateway specificities */
 int8_t antenna_gain = 0;
 
 /* Control over the separate subprocesses. Per default, the system behaves like a basic packet forwarder. */
 bool gps_enabled         = false;   /* controls the use of the GPS                      */
 bool beacon_enabled      = false;   /* controls the activation of the time beacon.      */
-static bool monitor_enabled     = false;   /* controls the activation access mode.             */
 bool logger_enabled      = false;   /* controls the activation of more logging          */
 bool flush_enabled       = false;   /* flush output after statistics                    */
 bool flush_line          = false;   /* flush output after every line                    */
@@ -353,12 +347,17 @@ static int parse_SX1301_configuration(const char * conf_file) {
         boardconf.lorawan_public = false;
     }
     val = json_object_get_value(conf_obj, "clksrc"); /* fetch value (if possible) */
+#ifndef _MULTITECH_H_
     if (json_value_get_type(val) == JSONNumber) {
         boardconf.clksrc = (uint8_t)json_value_get_number(val);
     } else {
         MSG("WARNING: Data type for clksrc seems wrong, please check\n");
         boardconf.clksrc = 0;
     }
+#else
+    // ignore parameter and hard code for MultiTech hardware
+    boardconf.clksrc = 0;
+#endif
     MSG("INFO: lorawan_public %d, clksrc %d\n", boardconf.lorawan_public, boardconf.clksrc);
     /* all parameters parsed, submitting configuration to the HAL */
     if (lgw_board_setconf(boardconf) != LGW_HAL_SUCCESS) {
@@ -693,7 +692,6 @@ static int parse_gateway_configuration(const char * conf_file) {
 	JSON_Value *val4 = NULL; /* needed to detect the absence of some fields */
 	JSON_Value *val5 = NULL; /* needed to detect the absence of some fields */
 	JSON_Array *confservers = NULL;
-	JSON_Array *syscalls = NULL;
     const char *str; /* pointer to sub-strings in the JSON data */
     unsigned long long ull = 0;
 	int i; /* Loop variable */
@@ -866,33 +864,6 @@ static int parse_gateway_configuration(const char * conf_file) {
 		serv_count = 1;
 	}
 
-	/* Read the system calls for the monitor function. */
-	syscalls = json_object_get_array(conf_obj, "system_calls");
-	if (syscalls != NULL) {
-		/* serv_count represents the maximal number of servers to be read. */
-		mntr_sys_count = json_array_get_count(syscalls);
-		MSG("INFO: Found %i system calls in array.\n", mntr_sys_count);
-		for (i = 0; i < mntr_sys_count  && i < MNTR_SYS_MAX; i++) {
-			str = json_array_get_string(syscalls,i);
-			snprintf(mntr_sys_list[i], sizeof mntr_sys_list[i],"%s",str);
-			MSG("INFO: System command %i: \"%s\"\n",i,mntr_sys_list[i]);
-		}
-	}
-
-	/* monitor hostname or IP address (optional) */
-	str = json_object_get_string(conf_obj, "monitor_address");
-    if (str != NULL) {
-    	snprintf(monitor_addr, sizeof monitor_addr,"%s",str);
-		MSG("INFO: monitor hostname or IP address is configured to \"%s\"\n", monitor_addr);
-    }
-
-	/* get monitor connection port (optional) */
-	val = json_object_get_value(conf_obj, "monitor_port");
-    if (val != NULL) {
-		snprintf(monitor_port, sizeof monitor_port, "%u", (uint16_t)json_value_get_number(val));
-		MSG("INFO: monitor port is configured to \"%s\"\n", monitor_port);
-    }
-
 	/* ghost hostname or IP address (optional) */
 	str = json_object_get_string(conf_obj, "ghost_address");
 	if (str != NULL) {
@@ -977,34 +948,6 @@ static int parse_gateway_configuration(const char * conf_file) {
     	snprintf(gps_tty_path, sizeof gps_tty_path,"%s",str);
         MSG("INFO: GPS serial port path is configured to \"%s\"\n", gps_tty_path);
     }
-
-	/* SSH path (optional) */
-	str = json_object_get_string(conf_obj, "ssh_path");
-	if (str != NULL) {
-		snprintf(ssh_path, sizeof ssh_path,"%s",str);
-		MSG("INFO: SSH path is configured to \"%s\"\n", ssh_path);
-	}
-
-	/* SSH port (optional) */
-	val = json_object_get_value(conf_obj, "ssh_port");
-	if (val != NULL) {
-		ssh_port = (uint16_t) json_value_get_number(val);
-		MSG("INFO: SSH port is configured to %u\n", ssh_port);
-	}
-
-	/* WEB port (optional) */
-	val = json_object_get_value(conf_obj, "http_port");
-	if (val != NULL) {
-		http_port = (uint16_t) json_value_get_number(val);
-		MSG("INFO: HTTP port is configured to %u\n", http_port);
-	}
-
-	/* NGROK path (optional) */
-	str = json_object_get_string(conf_obj, "ngrok_path");
-	if (str != NULL) {
-		snprintf(ngrok_path, sizeof ngrok_path,"%s",str);
-		MSG("INFO: NGROK path is configured to \"%s\"\n", ngrok_path);
-	}
 
     /* get reference coordinates */
     val = json_object_get_value(conf_obj, "ref_latitude");
@@ -1125,17 +1068,6 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Beacon is enabled\n");
 	} else {
 		MSG("INFO: Beacon is disabled\n");
-    }
-
-	/* Read the value for monitor_enabled data */
-	val = json_object_get_value(conf_obj, "monitor");
-	if (json_value_get_type(val) == JSONBoolean) {
-		monitor_enabled = (bool)json_value_get_boolean(val);
-	}
-	if (monitor_enabled == true) {
-		MSG("INFO: Monitor is enabled\n");
-	} else {
-		MSG("INFO: Monitor is disabled\n");
     }
 
 	/* Read the value for logger_enabled data */
@@ -1507,14 +1439,8 @@ int main(int argc, char *argv[])
 		MSG("INFO: [main] Ghost listener started, ghost packets can now be received.\n");
     }
 	
-	/* Connect to the monitor server */
-    if (monitor_enabled == true) {
-    	monitor_start(monitor_addr,monitor_port);
-		MSG("INFO: [main] Monitor contacted, monitor data can now be requested.\n");
-    }
-
     /* Check if we have anything to do */
-    if ( (radiostream_enabled == false) && (ghoststream_enabled == false) && (statusstream_enabled == false) && (monitor_enabled == false) ) {
+    if ( (radiostream_enabled == false) && (ghoststream_enabled == false) && (statusstream_enabled == false) ) {
     	MSG("WARNING: [main] All streams have been disabled, gateway may be completely silent.\n");
     }
 
@@ -1582,7 +1508,6 @@ int main(int argc, char *argv[])
     if (gps_active == true) pthread_cancel(thrid_timersync); /* don't wait for timer sync thread */
 
 	if (ghoststream_enabled == true) ghost_stop();
-	if (monitor_enabled == true) monitor_stop();
 	if (gps_active == true) pthread_cancel(thrid_gps);   /* don't wait for GPS thread */
 	if (gps_active == true) pthread_cancel(thrid_valid); /* don't wait for validation thread */
 
