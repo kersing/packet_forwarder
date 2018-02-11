@@ -105,7 +105,7 @@ void _debug_log(const char *fmt, ...) {
     va_end(arg);
 
     fflush(debugLog);
-    fsync(fileno(debugLog));
+//    fsync(fileno(debugLog));
 }
 
 
