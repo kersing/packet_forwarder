@@ -86,6 +86,7 @@ extern Server servers[];
 
 FILE *debugLog = NULL;
 
+#if 0
 // Temporary code for debugging purposes:
 #include <stdarg.h> 
 void _debug_log(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
@@ -107,13 +108,12 @@ void _debug_log(const char *fmt, ...) {
     fflush(debugLog);
 //    fsync(fileno(debugLog));
 }
-
+#endif
 
 void ttn_init(int idx) {
     if (debugLog == NULL) {
     	debugLog = fopen("/tmp/ttn-debug.txt","a");
     }
-    debug_log("Started for %s",servers[idx].addr);
 
     // Create upstream thread and connect
     if (servers[idx].critical) {
@@ -329,7 +329,6 @@ void ttn_data_up(int idx, int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
     Queue *entry; 
     Queue *last;
 
-    debug_log("Uplink for %s",servers[idx].addr);
     // Don't queue data for disconnected servers
     if (servers[idx].live == false) return;
 
@@ -352,20 +351,16 @@ void ttn_data_up(int idx, int nb_pkt, struct lgw_pkt_rx_s *rxpkt) {
 	last->next = entry;
     }
     pthread_mutex_unlock(&mx_queues);
-    debug_log("Uplink queued %s",servers[idx].addr);
 
     // Wake send thread
     sem_post(&servers[idx].send_sem);
-    debug_log("Uplink notified %s",servers[idx].addr);
 }
 
 void ttn_connect(int idx) {
     int waittime = 0;
     servers[idx].live = false;
 
-    debug_log("Connect start for %s",servers[idx].addr);
     while (!exit_sig && !quit_sig) {
-debug_log("In connect loop sleep %s",servers[idx].addr);
 	if (waittime == 0) {
 	    // wait 30 seconds for next attempt
 	    waittime = 30;
@@ -373,7 +368,6 @@ debug_log("In connect loop sleep %s",servers[idx].addr);
 #if DEBUG_PKT_FWD > 0
 	    int t = 0;
 	    while (t < waittime) {
-debug_log("Connect for %s sleeping() at %d, total %d",servers[idx].addr,t,waittime);
 	    	MSG_DEBUG(DEBUG_PKT_FWD,"ttn_connect: sleeping() at %d, total %d\n",t,waittime);
 		sleep(10);
 		t += 10;
@@ -383,38 +377,27 @@ debug_log("Connect for %s sleeping() at %d, total %d",servers[idx].addr,t,waitti
 #endif
 	    if (waittime < 300) waittime = 2 * waittime;
 	}
-debug_log("Connect ttngwc_init for %s",servers[idx].addr);
 	ttngwc_init(&servers[idx].ttn, servers[idx].gw_id, 
 		    servers[idx].downstream == true ? &ttn_downlink : &ttn_dummy_downlink, NULL);
 	if (!servers[idx].ttn) {
-debug_log("Connect ttngwc_init failed for %s",servers[idx].addr);
 	    MSG("ERROR: [TTN] Initialize server \"%s\" failed, retry in %d seconds\n",servers[idx].addr,waittime);
 	    // Will this ever recover? Retry anyway...
 	    continue;
 	}
-debug_log("Connect ttngwc_init success for %s",servers[idx].addr);
-debug_log("Connect ttngwc_connect for %s",servers[idx].addr);
 	int err = ttngwc_connect(servers[idx].ttn, servers[idx].addr, servers[idx].gw_port, servers[idx].gw_key);
 	if (err != 0) {
-debug_log("Connect ttngwc_connect failed for %s",servers[idx].addr);
 	    MSG("ERROR: [TTN] Connection to server \"%s\" failed, retry in %d seconds\n",servers[idx].addr,waittime);
-debug_log("Connect calling ttngwc_disconnect for %s",servers[idx].addr);
 	    ttngwc_disconnect(servers[idx].ttn);
-debug_log("Connect calling ttngwc_cleanup for %s",servers[idx].addr);
 	    ttngwc_cleanup(servers[idx].ttn);
-debug_log("Connect post call ttngwc_cleanup for %s",servers[idx].addr);
 	    continue;
 	}
-debug_log("Connect ttngwc_connect success for %s",servers[idx].addr);
 	break; 
     }
-debug_log("Connect exit loop for %s",servers[idx].addr);
     if (!exit_sig && !quit_sig) {
 	if (ttngwc_checkconnected(servers[idx].ttn) < 1) {
 	    MSG("ERROR: Not connected when connection should be live\n");
 	    exit(1);
 	}
-debug_log("Connect set active for %s",servers[idx].addr);
 	MSG("INFO: [TTN] server \"%s\" connected\n",servers[idx].addr);
 	servers[idx].live = true;
         servers[idx].connecting = false;
@@ -426,7 +409,6 @@ debug_log("Connect set active for %s",servers[idx].addr);
 void ttn_stop(int idx) {
     sem_post(&servers[idx].send_sem);
     pthread_join(servers[idx].t_up, NULL);
-debug_log("Stop for %s",servers[idx].addr);
     MSG("INFO: [TTN] Disconnecting server \"%s\"\n",servers[idx].addr);
     servers[idx].live = false;
     ttngwc_disconnect(servers[idx].ttn);
@@ -434,27 +416,20 @@ debug_log("Stop for %s",servers[idx].addr);
 }
 
 void ttn_reconnect(int idx) {
-debug_log("Reconnect for %s",servers[idx].addr);
     pthread_mutex_lock(&mx_queues);
     if (servers[idx].connecting) {
-debug_log("Reconnect already active for %s",servers[idx].addr);
     	// Already recovering connection, ignore this request
 	MSG("INFO: [TTN] reconnect called while reconnecting\n");
 	pthread_mutex_unlock(&mx_queues);
-debug_log("Reconnect already active for %s unlocked",servers[idx].addr);
 	return;
     }
-debug_log("Reconnect set connecting for %s",servers[idx].addr);
     servers[idx].connecting = true;
     servers[idx].live = false;
     pthread_mutex_unlock(&mx_queues);
     MSG("INFO: [TTN] Reconnecting %s\n",servers[idx].addr);
-debug_log("Reconnect ttngwc_disconnect for %s",servers[idx].addr);
     ttngwc_disconnect(servers[idx].ttn);
-debug_log("Reconnect ttngwc_cleanup for %s",servers[idx].addr);
     ttngwc_cleanup(servers[idx].ttn);
 
-debug_log("Reconnect wake-up for %s",servers[idx].addr);
     // Wake send thread to force reconnect
     sem_post(&servers[idx].send_sem);
 }
@@ -479,42 +454,33 @@ void ttn_upstream(void *pic) {
 	// wait for data to arrive
 	wait_for.tv_nsec = 0;
 	wait_for.tv_sec = time(NULL) + 10;
-debug_log("Upstream waiting for %s",servers[idx].addr);
     	sem_timedwait(&servers[idx].send_sem,&wait_for);
-debug_log("Upstream waited for %s",servers[idx].addr);
 	//
 	// check connection is up and running and we're not shutting down
 	if (servers[idx].live == false && !exit_sig && !quit_sig) {
-debug_log("Upstream not live for %s",servers[idx].addr);
 	    ttn_connect(idx);
 	}
 
 	// Fail-save check??
 	err = ttngwc_checkconnected(servers[idx].ttn);
-debug_log("Upstream ttngwc_checkconnected for %s = %d",servers[idx].addr,err);
 	//MSG_DEBUG(DEBUG_PKT_FWD,"ttn_upstream: connected %d, live %d, connecting %d\n",err,servers[idx].live,servers[idx].connecting);
 	if ((servers[idx].live == true && err != 1) || (servers[idx].connecting == false && err == 0)) {
 	    // Something is seriously messed up, we're supposed to be connected or connecting
 	    // but somehow are not
-debug_log("Upstream connection state failure for %s",servers[idx].addr);
 	    MSG("ERROR: [TTN] Connection state failure\n");
 	    ttn_reconnect(idx);
-debug_log("Upstream reconnect called for %s",servers[idx].addr);
 	    continue;
 	}
 
-debug_log("Upstream get data for %s",servers[idx].addr);
 	// dequeue data
 	pthread_mutex_lock(&mx_queues);
 	entry = servers[idx].queue;
 	if (entry == NULL) {
 	    pthread_mutex_unlock(&mx_queues);
-debug_log("Upstream no data for %s",servers[idx].addr);
 	    continue;
 	}
 	servers[idx].queue = entry->next;
 	pthread_mutex_unlock(&mx_queues);
-debug_log("Upstream found data for %s",servers[idx].addr);
 
 	if (gps_active == true) {
 	    pthread_mutex_lock(&mx_timeref);
@@ -667,17 +633,13 @@ debug_log("Upstream found data for %s",servers[idx].addr);
 	    up.gateway_metadata = &gateway;
 
 	    // send message uplink
-debug_log("Upstream ttngwc_send_uplink for %s",servers[idx].addr);
 	    err = ttngwc_send_uplink(servers[idx].ttn, &up);
 	    if (err) {
-debug_log("Upstream ttngwc_send_uplink failed for %s",servers[idx].addr);
 		MSG("ERROR: [up] TTN lora send to server \"%s\" failed\n",servers[idx].addr);
 		ttn_reconnect(idx);
-debug_log("Upstream ttngwc_send_uplink reconnect called for %s",servers[idx].addr);
 		break;
 	    }
 	    else {
-debug_log("Upstream ttngwc_send_uplink success for %s",servers[idx].addr);
 		MSG("INFO: [up] TTN lora packet send to server \"%s\"\n",servers[idx].addr);
 	    }
 	}
