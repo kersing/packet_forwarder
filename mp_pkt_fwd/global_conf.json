@@ -1,8 +1,7 @@
 {
     "SX1301_conf": {
         "lorawan_public": true,
-        /* "clksrc": 1, radio_1 provides clock to concentrator for most devices except MultiTech */
-	"clksrc": 0, /* radio_0 provides clock to concentrator for MultiTech */
+        "clksrc": 1, 
         "antenna_gain": 0, /* antenna gain, in dBi */
         "radio_0": {
             "enable": true,
@@ -202,9 +201,8 @@
         /* change with default server address/ports, or overwrite in local_conf.json */
         "gateway_ID": "AA555A0000000000",
         /* Systems (set logger to true for logs per (!) packet) */
-        "gps": true,
+        "gps": false,
         "beacon": false,
-        "monitor": false,
         "logger": true,
         /* Streams */
         "upstream": true,
@@ -212,7 +210,7 @@
         "ghoststream": false,
         "radiostream": true,
         "statusstream": true,
-        /* node server, (for standard server, fall back for poly packet server) */
+        /* node server, (for standard server, fall back for poly packet & multi protocol packet server) */
         "server_address": "127.0.0.1",
         "serv_port_up": 1680,
         "serv_port_down": 1681,
@@ -221,11 +219,6 @@
         [ { "server_address": "router.eu.thethings.network",
             "serv_port_up": 1700,
             "serv_port_down": 1700,
-            "serv_max_stall": 0,
-            "serv_enabled": false },
-          { "server_address": "iot.semtech.com",
-            "serv_port_up": 1680,
-            "serv_port_down": 1680,
             "serv_max_stall": 0,
             "serv_enabled": true } ],
         /* adjust the following parameters for your network */
@@ -238,21 +231,9 @@
         "forward_crc_disabled": false,
         /* GPS configuration */
         "gps_tty_path": "/dev/ttyAMA0",
-        "fake_gps": true,
-        "ref_latitude": 10,
-        "ref_longitude": 20,
-        "ref_altitude": -1,
         /* Ghost configuration (for simulating nodes) */
         "ghost_address": "127.0.0.1",
         "ghost_port": 1918,
-        /* Monitor configuration (for remote access through the firewall/nat) */
-        "monitor_address": "127.0.0.1",
-        "monitor_port": 2008,
-        "ssh_path": "/usr/bin/ssh",
-        "ssh_port": 22,
-        "http_port": 80,
-        "ngrok_path": "/usr/bin/ngrok",
-        "system_calls": ["df -m","free -h","uptime","who -a","uname -a"],
         /* Performance updates (if empty, nothing is send/written) */
         "stat_format": "semtech",                 /* semtech or idee_verbose or idee_concise. */
         "stat_damping": 50,                       /* 1 for least damping up to 99 for most damping. */
