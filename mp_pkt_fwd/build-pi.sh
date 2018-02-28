@@ -87,7 +87,7 @@ make install
 cd $INSTALL_DIR/dev/ttn-gateway-connector
 cp config.mk.in config.mk
 make
-cp bin/libttn-gateway-connector.so /usr/lib/
+cp bin/libttn-gateway-connector.so /usr/local/lib/
 
 cd $INSTALL_DIR/dev/packet_forwarder/mp_pkt_fwd/
 make
