@@ -82,7 +82,8 @@ cd $INSTALL_DIR/dev/packet_forwarder/mp_pkt_fwd/
 make
 
 # Copy things needed at runtime to where they'll be expected
-cp $INSTALL_DIR/dev/packet_forwarder/mp_pkt_fwd/mp_pkt_fwd $INSTALL_DIR/mp_pkt_fwd
+# Pass --remove-destination to allow overwriting a running binary
+cp --remove-destination $INSTALL_DIR/dev/packet_forwarder/mp_pkt_fwd/mp_pkt_fwd $INSTALL_DIR/mp_pkt_fwd
 
 echo "Build & Installation Of Binaries Completed."
 echo "Do not forget to get master configuration from"
