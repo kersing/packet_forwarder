@@ -169,6 +169,7 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 			    buff_index += j;
 			}
 		    }
+		    txpkt.no_crc = 1;
 		    txpkt.freq_hz = gtw->frequency;
 		    txpkt.rf_chain = gtw->rf_chain;
 		    txpkt.rf_power = gtw->power - antenna_gain;
