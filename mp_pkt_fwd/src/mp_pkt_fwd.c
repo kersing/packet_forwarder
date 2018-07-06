@@ -251,6 +251,7 @@ long spi_speed = 6000000;
 #else
 long spi_speed = SPI_SPEED;
 #endif
+char *spi_device = NULL;
 
 /* path to logfile */
 char *logfile_path = NULL;
@@ -1158,15 +1159,16 @@ double difftimespec(struct timespec end, struct timespec beginning) {
 }
 
 void usage(char *proc_name) {
-	fprintf(stderr, "Usage: %s [-c config_dir] [-l logfile] [-s spi speed in hz]\n", proc_name);
+	fprintf(stderr, "Usage: %s [-c config_dir] [-l logfile] [-s spi speed in hz] [-d device file]\n", proc_name);
 	exit(1);
 }
 
-static char *short_options = "c:l:s:h";
+static char *short_options = "c:l:s:d:h";
 static struct option long_options[] = {
         {"config-dir", 1, 0, 'c'},
         {"logfile", 1, 0, 'l'},
         {"speed", 1, 0, 's'},
+        {"device", 1, 0, 'd'},
         {"help", 0, 0, 'h'},
         {0, 0, 0, 0},
 };
@@ -1248,6 +1250,13 @@ int main(int argc, char *argv[])
 		   exit(1);
                }
 	       break;
+          case 'd':
+		spi_device = strdup(optarg);
+		if (spi_device == NULL) {
+		   printf("Error: can't save spi_device name\n");
+		   exit(1);
+		}
+		break;
 	  default:
 	       usage(proc_name);
 	       break;
@@ -1356,7 +1365,7 @@ int main(int argc, char *argv[])
     /* starting the concentrator */
 	if (radiostream_enabled == true) {
 		MSG("INFO: [main] Starting the concentrator\n");
-    i = lgw_start(spi_speed);
+    i = lgw_start(spi_speed, spi_device);
     if (i == LGW_HAL_SUCCESS) {
 			MSG("INFO: [main] concentrator started, radio packets can now be received.\n");
     } else {
