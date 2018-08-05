@@ -1,0 +1,17 @@
+To facilitate easier debugging the software now allows for runtime configuration
+of debugging levels. Previously this had to be done compile time.
+
+Available debug switches are:
+debug_spi : SPI communication to concentrator
+debug_reg : concentrator communication
+debug_hal : HAL Layer
+debug_gps : GPS
+debug_lbt : Listen Before Talk
+debug_pkt_fwd : Debug TTN connection setup
+debug_jit : Show verbose JIT queue information
+debug_jit_error : Show JIT errors
+debug_beacon : Show beacon debugging
+debug_log : Show JSON data for Semtech protocol
+
+Enable debugging by adding below line to the (local/global) json configuration:
+"debug_...": true,

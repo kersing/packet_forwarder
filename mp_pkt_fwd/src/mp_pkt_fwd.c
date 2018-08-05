@@ -65,6 +65,7 @@ Modifications for multi protocol use: Jac Kersing
 #include "loragw_gps.h"
 #include "loragw_aux.h"
 #include "loragw_reg.h"
+#include "loragw_debug.h"
 #include "config.h"
 #include "mp_pkt_fwd.h"
 #include "ghost.h"
@@ -255,6 +256,9 @@ char *spi_device = NULL;
 
 /* path to logfile */
 char *logfile_path = NULL;
+
+/* enabled debugging options */
+int debug_mask;
 
 /* -------------------------------------------------------------------------- */
 /* --- MAC OSX Extensions  -------------------------------------------------- */
@@ -1114,6 +1118,135 @@ static int parse_gateway_configuration(const char * conf_file) {
 		MSG("INFO: Watchdog is enabled\n");
 	} else {
 		MSG("INFO: Watchdog is disabled\n");
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_aux");
+    if (json_value_get_type(val) == JSONBoolean) {
+        debug_aux = (bool)json_value_get_boolean(val);
+	MSG("INFO: debug_aux is %s\n", debug_aux ? "enabled":"disabled");
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_spi");
+    if (json_value_get_type(val) == JSONBoolean) {
+        debug_spi = (bool)json_value_get_boolean(val);
+	MSG("INFO: debug_spi is %s\n", debug_spi ? "enabled":"disabled");
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_reg");
+    if (json_value_get_type(val) == JSONBoolean) {
+        debug_reg = (bool)json_value_get_boolean(val);
+	MSG("INFO: debug_reg is %s\n", debug_reg ? "enabled":"disabled");
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_hal");
+    if (json_value_get_type(val) == JSONBoolean) {
+        debug_hal = (bool)json_value_get_boolean(val);
+	MSG("INFO: debug_hal is %s\n", debug_hal ? "enabled":"disabled");
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_gps");
+    if (json_value_get_type(val) == JSONBoolean) {
+        debug_gps = (bool)json_value_get_boolean(val);
+	MSG("INFO: debug_gps is %s\n", debug_gps ? "enabled":"disabled");
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_gpio");
+    if (json_value_get_type(val) == JSONBoolean) {
+        debug_gpio = (bool)json_value_get_boolean(val);
+	MSG("INFO: debug_gpio is %s\n", debug_gpio ? "enabled":"disabled");
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_lbt");
+    if (json_value_get_type(val) == JSONBoolean) {
+        debug_lbt = (bool)json_value_get_boolean(val);
+	MSG("INFO: debug_lbt is %s\n", debug_lbt ? "enabled":"disabled");
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_pkt_fwd");
+    if (json_value_get_type(val) == JSONBoolean) {
+        if ( (bool)json_value_get_boolean(val) ) {
+		debug_mask |= DEBUG_PKT_FWD;
+		MSG("INFO: debug_pkt_fwd is enabled\n");
+	} else {
+		debug_mask &= ~DEBUG_PKT_FWD;
+		MSG("INFO: debug_pkt_fwd is disabled\n");
+	}
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_jit");
+    if (json_value_get_type(val) == JSONBoolean) {
+        if ( (bool)json_value_get_boolean(val) ) {
+		debug_mask |= DEBUG_JIT;
+		MSG("INFO: debug_jit is enabled\n");
+	} else {
+		debug_mask &= ~DEBUG_JIT;
+		MSG("INFO: debug_jit is disabled\n");
+	}
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_jit_error");
+    if (json_value_get_type(val) == JSONBoolean) {
+        if ( (bool)json_value_get_boolean(val) ) {
+		debug_mask |= DEBUG_JIT_ERROR;
+		MSG("INFO: debug_jit_error is enabled\n");
+	} else {
+		debug_mask &= ~DEBUG_JIT_ERROR;
+		MSG("INFO: debug_jit_error is disabled\n");
+	}
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_timersync");
+    if (json_value_get_type(val) == JSONBoolean) {
+        if ( (bool)json_value_get_boolean(val) ) {
+		debug_mask |= DEBUG_TIMERSYNC;
+		MSG("INFO: debug_timersync is enabled\n");
+	} else {
+		debug_mask &= ~DEBUG_TIMERSYNC;
+		MSG("INFO: debug_timersync is disabled\n");
+	}
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_beacon");
+    if (json_value_get_type(val) == JSONBoolean) {
+        if ( (bool)json_value_get_boolean(val) ) {
+		debug_mask |= DEBUG_BEACON;
+		MSG("INFO: debug_beacon is enabled\n");
+	} else {
+		debug_mask &= ~DEBUG_BEACON;
+		MSG("INFO: debug_beacon is disabled\n");
+	}
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_log");
+    if (json_value_get_type(val) == JSONBoolean) {
+        if ( (bool)json_value_get_boolean(val) ) {
+		debug_mask |= DEBUG_LOG;
+	} else {
+		debug_mask &= ~DEBUG_LOG;
+	}
+    }
+
+    /* Read the value for debug_* */
+    val = json_object_get_value(conf_obj, "debug_follow");
+    if (json_value_get_type(val) == JSONBoolean) {
+        if ( (bool)json_value_get_boolean(val) ) {
+		debug_mask |= DEBUG_FOLLOW;
+	} else {
+		debug_mask &= ~DEBUG_FOLLOW;
+	}
     }
 
 	/* Auto-quit threshold (optional) */

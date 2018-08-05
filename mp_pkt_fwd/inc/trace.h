@@ -18,13 +18,14 @@ Maintainer: Michael Coracin
 #define _LORA_PKTFWD_TRACE_H
 
 #define DEBUG_PKT_FWD   1
-#define DEBUG_JIT       0
-#define DEBUG_JIT_ERROR 0
-#define DEBUG_TIMERSYNC 0
-#define DEBUG_BEACON    0
-#define DEBUG_LOG       0
-#define DEBUG_FOLLOW    0
+#define DEBUG_JIT       2
+#define DEBUG_JIT_ERROR 4
+#define DEBUG_TIMERSYNC 8
+#define DEBUG_BEACON    16
+#define DEBUG_LOG       32
+#define DEBUG_FOLLOW    64
 
+extern int debug_mask;
 
 //#define MSG(args...) { printf(args) /* message that is destined to the user */; fflush(stdout); }
 
@@ -33,13 +34,12 @@ void logmessage(const char *, ...);
 
 #define MSG_DEBUG(FLAG, fmt, ...)                                                                         \
             do  {                                                                                         \
-                if (FLAG)                                                                                 \
+                if (FLAG & debug_mask)                                                                                 \
                     fprintf(stdout, "%s:%d:%s(): " fmt, __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__); \
             } while (0)
 
 //#define LOGGER(args...) do { if (logger_enabled == true) printf(args); } while (0)
 #define LOGGER(args...) do { if (logger_enabled == true) logmessage(args); } while (0)
-
 
 #endif
 /* --- EOF ------------------------------------------------------------------ */

@@ -169,6 +169,7 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 			    buff_index += j;
 			}
 		    }
+		    txpkt.no_crc = 1;
 		    txpkt.freq_hz = gtw->frequency;
 		    txpkt.rf_chain = gtw->rf_chain;
 		    txpkt.rf_power = gtw->power - antenna_gain;
@@ -365,16 +366,16 @@ void ttn_connect(int idx) {
 	    // wait 30 seconds for next attempt
 	    waittime = 30;
 	} else {
-#if DEBUG_PKT_FWD > 0
-	    int t = 0;
-	    while (t < waittime) {
-	    	MSG_DEBUG(DEBUG_PKT_FWD,"ttn_connect: sleeping() at %d, total %d\n",t,waittime);
-		sleep(10);
-		t += 10;
+	    if (debug_mask & DEBUG_PKT_FWD) {
+		int t = 0;
+		while (t < waittime) {
+		    MSG_DEBUG(DEBUG_PKT_FWD,"ttn_connect: sleeping() at %d, total %d\n",t,waittime);
+		    sleep(10);
+		    t += 10;
+		}
+	    } else {
+		sleep(waittime);
 	    }
-#else	    
-	    sleep(waittime);
-#endif
 	    if (waittime < 300) waittime = 2 * waittime;
 	}
 	ttngwc_init(&servers[idx].ttn, servers[idx].gw_id, 
@@ -463,7 +464,6 @@ void ttn_upstream(void *pic) {
 
 	// Fail-save check??
 	err = ttngwc_checkconnected(servers[idx].ttn);
-	//MSG_DEBUG(DEBUG_PKT_FWD,"ttn_upstream: connected %d, live %d, connecting %d\n",err,servers[idx].live,servers[idx].connecting);
 	if ((servers[idx].live == true && err != 1) || (servers[idx].connecting == false && err == 0)) {
 	    // Something is seriously messed up, we're supposed to be connected or connecting
 	    // but somehow are not
@@ -555,6 +555,7 @@ void ttn_upstream(void *pic) {
 			datarate="SF12";
 			break;
 		    default:
+			MSG("WARNING: [up] TTN lora packet with unknown datarate\n");
 			continue; /* skip that packet*/
 		}
 		switch (p->bandwidth) {
@@ -568,7 +569,7 @@ void ttn_upstream(void *pic) {
 			bandwidth="BW500";
 			break;
 		    default:
-			MSG("ERROR: [up] TTN lora packet with unknown bandwidth\n");
+			MSG("WARNING: [up] TTN lora packet with unknown bandwidth\n");
 			continue; /* skip that packet*/
 		}
 		sprintf(dbbuf,"%s%s",datarate,bandwidth);
@@ -592,7 +593,7 @@ void ttn_upstream(void *pic) {
 			lorawan.coding_rate="OFF";
 			break;
 		    default:
-			MSG("ERROR: [up] TTN lora packet with unknown coderate\n");
+			MSG("WARNING: [up] TTN lora packet with unknown coderate\n");
 			continue; /* skip that packet*/
 		}
 		lorawan.has_f_cnt = 1;
