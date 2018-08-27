@@ -82,6 +82,8 @@ extern char platform[];
 extern char email[];
 extern char description[];
 
+extern char *frequency_plan;
+
 extern Server servers[];
 
 FILE *debugLog = NULL;
@@ -691,6 +693,9 @@ void ttn_status_up(int idx, uint32_t rx_in, uint32_t rx_ok, uint32_t tx_in, uint
 	status.time = ((uint64_t)time(NULL)) * 1000000000;
     }
     pthread_mutex_unlock(&mx_timeref);
+    if (frequency_plan != NULL) {
+	status.frequency_plan = frequency_plan;
+    }
     status.platform = platform;
     status.contact_email = email;
     status.description = description;

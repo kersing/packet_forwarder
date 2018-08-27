@@ -243,6 +243,9 @@ char platform[24]    = DISPLAY_PLATFORM;  /* platform definition */
 char email[40]       = "";                /* used for contact email */
 char description[64] = "";                /* used for free form description */
 
+/* Channel plan */
+char *frequency_plan   = NULL;
+
 /* timestamp for watchdog */
 time_t last_loop;
 
@@ -285,6 +288,8 @@ double difftimespec(struct timespec end, struct timespec beginning);
 
 static void sig_handler(int sigio);
 
+static void parse_cplan_configuration(const char * conf_file);
+
 static int parse_SX1301_configuration(const char * conf_file);
 
 static int parse_gateway_configuration(const char * conf_file);
@@ -307,6 +312,41 @@ static void sig_handler(int sigio) {
         exit_sig = true;
     }
     return;
+}
+
+static void parse_cplan_configuration(const char * conf_file) {
+    const char conf_obj_name[] = "frequency_plan";
+    const char *str;
+    JSON_Value *root_val = NULL;
+    JSON_Value *val = NULL;
+
+    /* try to parse JSON */
+    root_val = json_parse_file_with_comments(conf_file);
+    if (root_val == NULL) {
+        MSG("ERROR: %s is not a valid JSON file\n", conf_file);
+        exit(EXIT_FAILURE);
+    }
+
+    val = json_object_get_value(json_value_get_object(root_val), conf_obj_name); /* fetch value (if possible) */
+    if (val == NULL) {
+        MSG("INFO: %s does not contain a JSON object named %s\n", conf_file, conf_obj_name);
+        return;
+    } else {
+        MSG("INFO: %s does contain a JSON object named %s, parsing frequency_plan\n", conf_file, conf_obj_name);
+    }
+
+    if (json_value_get_type(val) == JSONString) {
+        str = json_value_get_string(val); /* fetch value (if possible) */
+        frequency_plan = strdup(str);
+	if (frequency_plan == NULL) {
+		MSG("ERROR: Unable to allocate memory for frequency_plan value");
+	}
+    } else {
+        MSG("WARNING: Data type for frequency_plan seems wrong, please check\n");
+        frequency_plan = NULL;
+    }
+    MSG("INFO: frequency plan: %s\n",frequency_plan != NULL ? frequency_plan : "not set" );
+    json_value_free(root_val);
 }
 
 static int parse_SX1301_configuration(const char * conf_file) {
@@ -1435,20 +1475,24 @@ int main(int argc, char *argv[])
     if (access(debug_cfg_path, R_OK) == 0) { /* if there is a debug conf, parse only the debug conf */
         MSG("INFO: found debug configuration file %s, parsing it\n", debug_cfg_path);
         MSG("INFO: other configuration files will be ignored\n");
+        parse_cplan_configuration(debug_cfg_path);
         parse_SX1301_configuration(debug_cfg_path);
         parse_gateway_configuration(debug_cfg_path);
     } else if (access(global_cfg_path, R_OK) == 0) { /* if there is a global conf, parse it and then try to parse local conf  */
         MSG("INFO: found global configuration file %s, parsing it\n", global_cfg_path);
+        parse_cplan_configuration(global_cfg_path);
         parse_SX1301_configuration(global_cfg_path);
         parse_gateway_configuration(global_cfg_path);
         if (access(local_cfg_path, R_OK) == 0) {
             MSG("INFO: found local configuration file %s, parsing it\n", local_cfg_path);
             MSG("INFO: redefined parameters will overwrite global parameters\n");
+            parse_cplan_configuration(local_cfg_path);
             parse_SX1301_configuration(local_cfg_path);
             parse_gateway_configuration(local_cfg_path);
         }
     } else if (access(local_cfg_path, R_OK) == 0) { /* if there is only a local conf, parse it and that's all */
         MSG("INFO: found local configuration file %s, parsing it\n", local_cfg_path);
+        parse_cplan_configuration(local_cfg_path);
         parse_SX1301_configuration(local_cfg_path);
         parse_gateway_configuration(local_cfg_path);
     } else {
