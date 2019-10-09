@@ -144,7 +144,7 @@ Server servers[MAX_SERVERS];	/* Server information */
 static unsigned stat_interval = DEFAULT_STAT; /* time interval (in sec) at which statistics are collected and displayed */
 
 /* network protocol variables */
-static struct timeval push_timeout_half = {0, (PUSH_TIMEOUT_MS * 500)}; /* cut in half, critical for throughput */
+long push_timeout_ms;
 
 /* hardware access control and correction */
 pthread_mutex_t mx_concent = PTHREAD_MUTEX_INITIALIZER; /* control access to the concentrator */
@@ -248,14 +248,6 @@ char *frequency_plan   = NULL;
 
 /* timestamp for watchdog */
 time_t last_loop;
-
-/* SPI speed variable */
-#if CFG_SPI_FTDI
-long spi_speed = 6000000;
-#else
-long spi_speed = SPI_SPEED;
-#endif
-char *spi_device = NULL;
 
 /* path to logfile */
 char *logfile_path = NULL;
@@ -966,8 +958,9 @@ static int parse_gateway_configuration(const char * conf_file) {
     /* get time-out value (in ms) for upstream datagrams (optional) */
     val = json_object_get_value(conf_obj, "push_timeout_ms");
     if (val != NULL) {
-        push_timeout_half.tv_usec = 500 * (long int)json_value_get_number(val);
-        MSG("INFO: upstream PUSH_DATA time-out is configured to %u ms\n", (unsigned)(push_timeout_half.tv_usec / 500));
+        push_timeout_ms = (long int)json_value_get_number(val);
+        //push_timeout_half.tv_usec = 500 * (long int)json_value_get_number(val);
+        MSG("INFO: upstream PUSH_DATA time-out is configured to %u ms\n", push_timeout_ms);
     }
 
     /* packet filtering parameters */
@@ -1388,6 +1381,9 @@ int main(int argc, char *argv[])
     char local_cfg_path[PATH_MAX] = {0};
     char debug_cfg_path[PATH_MAX] = {0};
     char *proc_name = argv[0];
+    char spi_dev[PATH_MAX] = {0};
+    char spi_speed_s[20] = {0};
+    long spi_speed;
 
     /* threads */
     pthread_t thrid_up;
@@ -1422,13 +1418,12 @@ int main(int argc, char *argv[])
 		   printf("Error: specified SPI speed is invalid\n");
 		   exit(1);
                }
+	       sprintf(spi_speed_s, "LORAGW_SPEED=%ld", spi_speed);
+	       putenv(spi_speed_s);
 	       break;
           case 'd':
-		spi_device = strdup(optarg);
-		if (spi_device == NULL) {
-		   printf("Error: can't save spi_device name\n");
-		   exit(1);
-		}
+		sprintf(spi_dev, "LORAGW_SPI=%s",optarg);
+		putenv(spi_dev);
 		break;
 	  default:
 	       usage(proc_name);
@@ -1542,7 +1537,7 @@ int main(int argc, char *argv[])
     /* starting the concentrator */
 	if (radiostream_enabled == true) {
 		MSG("INFO: [main] Starting the concentrator\n");
-    i = lgw_start(spi_speed, spi_device);
+    i = lgw_start();
     if (i == LGW_HAL_SUCCESS) {
 			MSG("INFO: [main] concentrator started, radio packets can now be received.\n");
     } else {
@@ -2114,7 +2109,7 @@ void thread_watchdog(void) {
         wait_ms(30000);
 	// timestamp updated within the last 3 stat intervals? If not assume something is wrong and exit
 	if ((time(NULL) - last_loop) > (long int)((stat_interval * 3) + 5)) {
-		MSG("ERROR: Watdog timer expired!\n");
+		MSG("ERROR: Wathdog timer expired!\n");
 		exit(254);
 	}
     }

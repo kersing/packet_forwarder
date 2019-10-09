@@ -160,6 +160,7 @@ extern double xtal_correct;
 
 extern pthread_mutex_t mx_stat_rep;
 extern char status_report[];
+extern long push_timeout_ms;
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE VARIABLES (GLOBAL) ------------------------------------------- */
@@ -289,6 +290,7 @@ void semtech_init(int idx) {
 
 
     /* set upstream socket RX timeout */
+    push_timeout_half.tv_usec = 500 * push_timeout_ms;
     if (servers[idx].live == true) {
 	i = setsockopt(servers[idx].sock_up, SOL_SOCKET, SO_RCVTIMEO, (void *)&push_timeout_half, sizeof push_timeout_half);
 	if (i != 0) {
@@ -455,7 +457,7 @@ void semtech_thread_down(void* pic) {
     enum jit_pkt_type_e downlink_type;
 
     /* gwtraf stream */
-    char json[100], iso_timestamp[24];
+    char json[300], iso_timestamp[24];
     time_t system_time;
     int j,buff_index;
 
@@ -711,7 +713,7 @@ void semtech_thread_down(void* pic) {
 	    buff_index = 0;
 	    system_time = time(NULL);
 	    strftime(iso_timestamp, sizeof iso_timestamp, "%FT%TZ", gmtime(&system_time));
-	    j = snprintf((char *)(json + buff_index), 100-buff_index, "{\"type\":\"downlink\",\"gw\":\"%016llX\",\"time\":\"%s\",", (long long unsigned int) lgwm, iso_timestamp);
+	    j = snprintf((char *)(json + buff_index), 300-buff_index, "{\"type\":\"downlink\",\"gw\":\"%016llX\",\"time\":\"%s\",", (long long unsigned int) lgwm, iso_timestamp);
 	    if (j > 0) {
 		buff_index += j;
 	    }
@@ -732,7 +734,7 @@ void semtech_thread_down(void* pic) {
 
                     /* Concentrator timestamp is given, we consider it is a Class A downlink */
                     downlink_type = JIT_PKT_TYPE_DOWNLINK_CLASS_A;
-		    j = snprintf((json + buff_index), 100-buff_index, ",\"timestamp\":%d",txpkt.count_us);
+		    j = snprintf((json + buff_index), 300-buff_index, ",\"timestamp\":%d",txpkt.count_us);
 		    if (j > 0) {
 			buff_index += j;
 		    }
@@ -793,12 +795,12 @@ void semtech_thread_down(void* pic) {
                     	LOGGER("INFO: [down] a packet will be sent on timestamp value %u (calculated from UTC time)\n", txpkt.count_us);
                     }
 
-		    j = snprintf((json + buff_index), 100-buff_index, ",\"timestamp\":%d",txpkt.count_us);
+		    j = snprintf((json + buff_index), 300-buff_index, ",\"timestamp\":%d",txpkt.count_us);
 		    if (j > 0) {
 			buff_index += j;
 		    }
 
-		    j = snprintf((json + buff_index), 100-buff_index, ",\"timestamp\":%d",txpkt.count_us);
+		    j = snprintf((json + buff_index), 300-buff_index, ",\"timestamp\":%d",txpkt.count_us);
 		    if (j > 0) {
 			buff_index += j;
 		    }
@@ -822,7 +824,7 @@ void semtech_thread_down(void* pic) {
                 continue;
             }
             txpkt.freq_hz = (uint32_t)((double)(1.0e6) * json_value_get_number(val));
-	    j = snprintf((json + buff_index), 100-buff_index, ",\"frequency\":%d,",txpkt.freq_hz);
+	    j = snprintf((json + buff_index), 300-buff_index, ",\"frequency\":%d,",txpkt.freq_hz);
 	    if (j > 0) {
 		buff_index += j;
 	    }
@@ -835,7 +837,7 @@ void semtech_thread_down(void* pic) {
                 continue;
             }
             txpkt.rf_chain = (uint8_t)json_value_get_number(val);
-	    j = snprintf((json + buff_index), 100-buff_index, ",\"rf_chain\":%d",txpkt.rf_chain);
+	    j = snprintf((json + buff_index), 300-buff_index, ",\"rf_chain\":%d",txpkt.rf_chain);
 	    if (j > 0) {
 		buff_index += j;
 	    }
@@ -844,7 +846,7 @@ void semtech_thread_down(void* pic) {
             val = json_object_get_value(txpk_obj,"powe");
             if (val != NULL) {
                 txpkt.rf_power = (int8_t)json_value_get_number(val) - antenna_gain;
-		j = snprintf((json + buff_index), 100-buff_index, ",\"rf_power\":%d",txpkt.rf_power);
+		j = snprintf((json + buff_index), 300-buff_index, ",\"rf_power\":%d",txpkt.rf_power);
 		if (j > 0) {
 		    buff_index += j;
 		}
@@ -868,7 +870,7 @@ void semtech_thread_down(void* pic) {
                     json_value_free(root_val);
                     continue;
                 }
-		j = snprintf((json + buff_index), 100-buff_index, ",\"modulation\":\"LORA\",\"data_rate\":\"%s\"",str);
+		j = snprintf((json + buff_index), 300-buff_index, ",\"modulation\":\"LORA\",\"data_rate\":\"%s\"",str);
 		if (j > 0) {
 		    buff_index += j;
 		}
@@ -907,7 +909,7 @@ void semtech_thread_down(void* pic) {
                     json_value_free(root_val);
                     continue;
                 }
-		j = snprintf((json + buff_index), 100-buff_index, "\"coding_rate\":\"%s\"", str);
+		j = snprintf((json + buff_index), 300-buff_index, "\"coding_rate\":\"%s\"", str);
 		if (j > 0) {
 		    buff_index += j;
 		}
@@ -992,7 +994,7 @@ void semtech_thread_down(void* pic) {
             }
             txpkt.size = (uint16_t)json_value_get_number(val);
 
-	    j = snprintf((json + buff_index), 100-buff_index, ",\"length\":%d", txpkt.size);
+	    j = snprintf((json + buff_index), 300-buff_index, ",\"length\":%d", txpkt.size);
 	    if (j > 0) {
 		buff_index += j;
 	    }
@@ -1062,7 +1064,7 @@ void semtech_thread_down(void* pic) {
             send_tx_ack(ic, buff_down[1], buff_down[2], jit_result);
 
 	    /* send to gwtraf */
-	    j = snprintf((json + buff_index), 100-buff_index, ",\"jit_result\":%d}", jit_result);
+	    j = snprintf((json + buff_index), 300-buff_index, ",\"jit_result\":%d}", jit_result);
 	    if (j > 0) {
 		buff_index += j;
 	    }

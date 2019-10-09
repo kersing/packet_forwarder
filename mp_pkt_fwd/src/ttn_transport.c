@@ -139,7 +139,7 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
     enum jit_error_e jit_result = JIT_ERROR_OK;
     struct timeval current_unix_time;
     struct timeval current_concentrator_time;
-    char json[100], iso_timestamp[24];
+    char json[300], iso_timestamp[24];
     time_t system_time; 
     int i,j,buff_index;
     short x0, x1;
@@ -158,7 +158,7 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 		    buff_index = 0;
 		    system_time = time(NULL);
 		    strftime(iso_timestamp, sizeof iso_timestamp, "%FT%TZ", gmtime(&system_time));
-		    j = snprintf((char *)(json + buff_index), 100-buff_index, "{\"type\":\"downlink\",\"gw\":\"%016llX\",\"time\":\"%s\",", (long long unsigned int) lgwm, iso_timestamp);
+		    j = snprintf((char *)(json + buff_index), 300-buff_index, "{\"type\":\"downlink\",\"gw\":\"%016llX\",\"time\":\"%s\",", (long long unsigned int) lgwm, iso_timestamp);
 		    if (j > 0) {
 			buff_index += j;
 		    }
@@ -166,7 +166,7 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 		    if (gtw->timestamp) {
 			txpkt.count_us = gtw->timestamp;
 			downlink_type = JIT_PKT_TYPE_DOWNLINK_CLASS_A;
-		        j = snprintf((json + buff_index), 100-buff_index, ",\"timestamp\":%d",txpkt.count_us);
+		        j = snprintf((json + buff_index), 300-buff_index, ",\"timestamp\":%d",txpkt.count_us);
 			if (j > 0) {
 			    buff_index += j;
 			}
@@ -175,7 +175,7 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 		    txpkt.freq_hz = gtw->frequency;
 		    txpkt.rf_chain = gtw->rf_chain;
 		    txpkt.rf_power = gtw->power - antenna_gain;
-		    j = snprintf((json + buff_index), 100-buff_index, ",\"frequency\":%d,\"rf_chain\":%d,\"rf_power\":%d",
+		    j = snprintf((json + buff_index), 300-buff_index, ",\"frequency\":%d,\"rf_chain\":%d,\"rf_power\":%d",
 		    	txpkt.freq_hz,txpkt.rf_chain,txpkt.rf_power);
 		    if (j > 0) {
 			buff_index += j;
@@ -219,7 +219,7 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 			} 
 			txpkt.invert_pol = gtw->polarization_inversion;
 			txpkt.preamble = (uint16_t)STD_LORA_PREAMB;
-			j = snprintf((json + buff_index), 100-buff_index, 
+			j = snprintf((json + buff_index), 300-buff_index, 
 			    ",\"modulation\":\"LORA\",\"data_rate\":\"%s\",\"coding_rate\":\"%s\"",
 			    lora->data_rate,lora->coding_rate);
 			if (j > 0) {
@@ -245,7 +245,7 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 
 		    txpkt.size = msg->payload.len;
 		    memcpy(txpkt.payload, msg->payload.data, txpkt.size < sizeof txpkt.payload ? txpkt.size : sizeof txpkt.payload);
-		    j = snprintf((json + buff_index), 100-buff_index, 
+		    j = snprintf((json + buff_index), 300-buff_index, 
 			",\"length\":%d", txpkt.size);
 		    if (j > 0) {
 			buff_index += j;
@@ -306,7 +306,7 @@ void ttn_downlink(Router__DownlinkMessage *msg, __attribute__ ((unused)) void *a
 			increment_down(TX_REQUESTED);
 		    }
 
-		    j = snprintf((json + buff_index), 100-buff_index, 
+		    j = snprintf((json + buff_index), 300-buff_index, 
 			",\"jit_result\":%d}", jit_result);
 		    if (j > 0) {
 			buff_index += j;
