@@ -9,7 +9,7 @@
 Description:
     Configure Lora concentrator and forward packets to multiple servers
     Use GPS for packet timestamping.
-    Send a becon at a regular interval without server intervention
+    Send a beacon at a regular interval without server intervention
     Processes ghost packets
     Switchable tasks.
     Suited for compilation on OSX

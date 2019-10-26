@@ -378,7 +378,7 @@ void ttn_connect(int idx) {
 	    } else {
 		sleep(waittime);
 	    }
-	    if (waittime < 300) waittime = 2 * waittime;
+	    if (waittime < 300) waittime = 2 * waittime; // Exponential backoff up to a maximum of 480 seconds
 	}
 	ttngwc_init(&servers[idx].ttn, servers[idx].gw_id, 
 		    servers[idx].downstream == true ? &ttn_downlink : &ttn_dummy_downlink, NULL);
@@ -643,7 +643,7 @@ void ttn_upstream(void *pic) {
 		break;
 	    }
 	    else {
-		MSG("INFO: [up] TTN lora packet send to server \"%s\"\n",servers[idx].addr);
+		MSG("INFO: [up] TTN lora packet sent to server \"%s\"\n",servers[idx].addr);
 	    }
 	}
 

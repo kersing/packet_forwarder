@@ -73,7 +73,7 @@ int get_concentrator_time(struct timeval *concent_time, struct timeval unix_time
     timersub(&unix_time, &offset_unix_concent, &local_timeval);
     pthread_mutex_unlock(&mx_timersync);
 
-    /* TODO: handle sx1301 coutner wrap-up !! */
+    /* TODO: handle sx1301 counter wrap-around / overflow !! */
     concent_time->tv_sec = local_timeval.tv_sec;
     concent_time->tv_usec = local_timeval.tv_usec;
 
@@ -116,7 +116,7 @@ void thread_timersync(void) {
         offset_previous.tv_sec = offset_unix_concent.tv_sec;
         offset_previous.tv_usec = offset_unix_concent.tv_usec;
 
-        /* TODO: handle sx1301 coutner wrap-up */
+        /* TODO: handle sx1301 counter wrap-around / overflow */
         pthread_mutex_lock(&mx_timersync); /* protect global variable access */
         timersub(&unix_timeval, &concentrator_timeval, &offset_unix_concent);
         pthread_mutex_unlock(&mx_timersync);
