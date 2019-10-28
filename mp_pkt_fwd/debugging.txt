@@ -1,5 +1,5 @@
 To facilitate easier debugging the software now allows for runtime configuration
-of debugging levels. Previously this had to be done compile time.
+of debugging levels. Previously this had to be done at compile time.
 
 Available debug switches are:
 debug_spi : SPI communication to concentrator

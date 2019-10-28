@@ -9,7 +9,7 @@
 Description:
     Configure Lora concentrator and forward packets to multiple servers
     Use GPS for packet timestamping.
-    Send a becon at a regular interval without server intervention
+    Send a beacon at a regular interval without server intervention
     Processes ghost packets
     Switchable tasks.
     Suited for compilation on OSX
@@ -518,7 +518,7 @@ void semtech_thread_down(void* pic) {
     beacon_pkt.payload[13] = 0xFF & (field_longitude >>  8);
     beacon_pkt.payload[14] = 0xFF & (field_longitude >> 16);
 
-    /* CRC of the optional beacon fileds */
+    /* CRC of the optional beacon fields */
     field_crc2 = crc_ccit((beacon_pkt.payload + 8), 7);
     beacon_pkt.payload[15] = 0xFF &  field_crc2;
     beacon_pkt.payload[16] = 0xFF & (field_crc2 >>  8);
@@ -756,7 +756,7 @@ void semtech_thread_down(void* pic) {
                             LOGGER("WARNING: [down] no valid GPS time reference yet, impossible to send packet on specific UTC time, TX aborted\n");
                             json_value_free(root_val);
 
-                            /* send acknoledge datagram to server */
+                            /* send acknowledge datagram to server */
                             send_tx_ack(ic, buff_down[1], buff_down[2], JIT_ERROR_GPS_UNLOCKED);
                             continue;
                         }
@@ -764,7 +764,7 @@ void semtech_thread_down(void* pic) {
                     	LOGGER("WARNING: [down] GPS disabled, impossible to send packet on specific UTC time, TX aborted\n");
                         json_value_free(root_val);
 
-                        /* send acknoledge datagram to server */
+                        /* send acknowledge datagram to server */
                         send_tx_ack(ic, buff_down[1], buff_down[2], JIT_ERROR_GPS_UNLOCKED);
                         continue;
                     }
