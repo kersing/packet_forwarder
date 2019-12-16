@@ -112,7 +112,7 @@ extern struct jit_queue_s jit_queue;
 extern pthread_mutex_t mx_meas_up;
 extern pthread_mutex_t mx_meas_dw;
 
-// For semtech statiscs only
+// For semtech statistics only
 extern uint32_t meas_up_payload_byte;
 
 // Private variables
@@ -310,8 +310,8 @@ void stats_report() {
 	double move_up_ack_quality[MAX_SERVERS]       = {0};  /* ratio of datagram sent to datagram acknowledged to server */
 	double move_dw_ack_quality[MAX_SERVERS]       = {0};  /* ratio of pull request to pull response to server */
 	double move_dw_datagram_quality[MAX_SERVERS]  = {0};  /* ratio of json correct datagrams to total datagrams received*/
-	double move_dw_receive_quality[MAX_SERVERS]   = {0};  /* ratio of succesfully aired data packets to total received datapackets */
-	double move_dw_beacon_quality                 =  0;   /* ratio of succesfully sent to queued for the beacon */
+	double move_dw_receive_quality[MAX_SERVERS]   = {0};  /* ratio of successfully aired data packets to total received data packets */
+	double move_dw_beacon_quality                 =  0;   /* ratio of successfully sent to queued for the beacon */
 
 	/* GPS coordinates and variables */
 	bool coord_ok = false;
@@ -627,17 +627,17 @@ void stats_report() {
 				} else {
 					snprintf(status_report, STATUS_SIZE, "{\"stat\":{\"time\":\"%s\",\"rxnb\":%u,\"rxok\":%u,\"rxfw\":%u,\"ackr\":%.1f,\"dwnb\":%u,\"txnb\":%u,\"pfrm\":\"%s\",\"mail\":\"%s\",\"desc\":\"%s\"}}", stat_timestamp, cp_nb_rx_rcv, cp_nb_rx_ok, cp_up_pkt_fwd, 100.0 * up_ack_ratio, cp_dw_dgram_rcv, cp_nb_tx_ok,platform,email,description);
 				}
-				printf("# Semtech status report send. \n");
+				printf("# Semtech status report sent. \n");
 			} else if (lorank_idee_verbose == true) {
 				/* The time field is already permanently included in the packet stream, note that may be a little later. */
 				json_object_remove(root_object_verbose,"time");
 				json_serialize_to_buffer(root_value_verbose,status_report,STATUS_SIZE);
-				printf("# Ideetron verbose status report send. \n");
+				printf("# Ideetron verbose status report sent. \n");
 			} else if (lorank_idee_concise == true) {
 				json_serialize_to_buffer(root_value_concise,status_report,STATUS_SIZE);
-				printf("# Ideetron concise status report send. \n");
+				printf("# Ideetron concise status report sent. \n");
 			} else 	{
-				printf("# NO status report send (format unknown!) \n");
+				printf("# NO status report sent (format unknown!) \n");
 			}
 			report_ready = true;
 			pthread_mutex_unlock(&mx_stat_rep);

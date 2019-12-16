@@ -9,7 +9,7 @@
 Description:
 	Configure Lora concentrator and forward packets to multiple servers
     Use GPS for packet timestamping.
-    Send a becon at a regular interval without server intervention
+    Send a beacon at a regular interval without server intervention
 	Processes ghost packets
 	Switchable tasks.
 	Suited for compilation on OSX
@@ -104,12 +104,12 @@ Modifications for multi protocol use: Jac Kersing
 #define PUSH_TIMEOUT_MS     100
 #define PULL_TIMEOUT_MS     200
 #define GPS_REF_MAX_AGE     30          /* maximum admitted delay in seconds of GPS loss before considering latest GPS sync unusable */
-#define FETCH_SLEEP_MS      10          /* nb of ms waited when a fetch return no packets */
+#define FETCH_SLEEP_MS      10          /* number of ms waited when a fetch return no packets */
 #define BEACON_POLL_MS      50          /* time in ms between polling of beacon TX status */
 
 #define PROTOCOL_VERSION    2           /* v1.3 */
 
-#define XERR_INIT_AVG       128         /* nb of measurements the XTAL correction is averaged on as initial value */
+#define XERR_INIT_AVG       128         /* number of measurements the XTAL correction is averaged on as initial value */
 #define XERR_FILT_COEF      256         /* coefficient for low-pass XTAL error tracking */
 
 #define PKT_PUSH_DATA   0
@@ -119,7 +119,7 @@ Modifications for multi protocol use: Jac Kersing
 #define PKT_PULL_ACK    4
 #define PKT_TX_ACK      5
 
-#define STATUS_SIZE		3072
+#define STATUS_SIZE     3072
 #define TX_BUFF_SIZE    ((540 * NB_PKT_MAX) + 30 + STATUS_SIZE)
 
 /* -------------------------------------------------------------------------- */
@@ -155,7 +155,7 @@ double xtal_correct = 1.0;
 /* GPS configuration and synchronization */
 static char gps_tty_path[64] = "\0"; /* path of the TTY port GPS is connected on */
 static int gps_tty_fd = -1;          /* file descriptor of the GPS TTY port */
-bool gps_active = false;      /* is GPS present and working on the board ? */
+bool gps_active = false;      /* is GPS present and working on the board? */
 
 /* GPS time reference */
 pthread_mutex_t mx_timeref = PTHREAD_MUTEX_INITIALIZER; /* control access to GPS time reference */
@@ -187,7 +187,7 @@ uint32_t meas_dw_payload_byte = 0; /* sum of radio payload bytes sent for upstre
 
 pthread_mutex_t mx_queues = PTHREAD_MUTEX_INITIALIZER; /* control access to the queues */
 pthread_mutex_t mx_meas_gps = PTHREAD_MUTEX_INITIALIZER; /* control access to the GPS statistics */
-bool gps_coord_valid; /* could we get valid GPS coordinates ? */
+bool gps_coord_valid; /* could we get valid GPS coordinates? */
 struct coord_s meas_gps_coord; /* GPS position of the gateway */
 struct coord_s meas_gps_err; /* GPS position of the gateway */
 
@@ -196,7 +196,7 @@ bool report_ready = false; /* true when there is a new report to send to the ser
 char status_report[STATUS_SIZE]; /* status report as a JSON object */
 
 /* beacon parameters */
-uint32_t beacon_period = 0; /* set beaconing period, must be a sub-multiple of 86400, the nb of sec in a day */
+uint32_t beacon_period = 0; /* set beaconing period, must be a sub-multiple of 86400, the number of seconds in a day */
 uint32_t beacon_freq_hz = 0; /* TX beacon frequency, in Hz */
 
 /* auto-quit function */
@@ -214,7 +214,7 @@ int stat_damping = 50;                   /* default damping for statistical valu
 /* Just In Time TX scheduling */
 struct jit_queue_s jit_queue;
 
-/* Gateway specificities */
+/* Gateway specifications */
 int8_t antenna_gain = 0;
 
 /* Control over the separate subprocesses. Per default, the system behaves like a basic packet forwarder. */
@@ -223,7 +223,7 @@ bool beacon_enabled      = false;   /* controls the activation of the time beaco
 bool logger_enabled      = false;   /* controls the activation of more logging          */
 bool flush_enabled       = false;   /* flush output after statistics                    */
 bool flush_line          = false;   /* flush output after every line                    */
-bool wd_enabled		 = false;   /* watchdog enabled					*/
+bool wd_enabled          = false;   /* watchdog enabled                                 */
 
 /* TX capabilities */
 struct lgw_tx_gain_lut_s txlut; /* TX gain table */
@@ -237,7 +237,7 @@ bool statusstream_enabled = true;    /* controls the data flow of status informa
 static bool ghoststream_enabled  = false;   /* controls the data flow from ghost-node to server       */
 static bool radiostream_enabled  = true;    /* controls the data flow from radio-node to server       */
 
-/* Informal status fields */
+/* Informational status fields */
 char gateway_id[20]  = "";                /* string form of gateway mac address */
 char platform[24]    = DISPLAY_PLATFORM;  /* platform definition */
 char email[40]       = "";                /* used for contact email */
@@ -260,8 +260,8 @@ int debug_mask;
 
 #ifdef __MACH__
 int clock_gettime(int clk_id, struct timespec* t) {
-	(void) clk_id;
-	struct timeval now;
+    (void) clk_id;
+    struct timeval now;
     int rv = gettimeofday(&now, NULL);
     if (rv) return rv;
     t->tv_sec  = now.tv_sec;
@@ -1128,7 +1128,7 @@ static int parse_gateway_configuration(const char * conf_file) {
 	if (flush_enabled == true) {
 		MSG("INFO: Flush output after statistics is enabled\n");
 	} else {
-		MSG("INFO: Flush output after statistic is disabled\n");
+		MSG("INFO: Flush output after statistics is disabled\n");
     }
 
 	/* Read the value for flush_line data */
@@ -1370,7 +1370,7 @@ int main(int argc, char *argv[])
     int ic; /* Server loop variable */
 
     /* configuration file related */
-    char *global_cfg_name= "global_conf.json"; /* contain global (typ. network-wide) configuration */
+    char *global_cfg_name= "global_conf.json"; /* contain global (typically network-wide) configuration */
     char *local_cfg_name = "local_conf.json"; /* contain node specific configuration, overwrite global parameters for parameters that are defined in both */
     char *debug_cfg_name = "debug_conf.json"; /* if present, all other configuration files are ignored */
 
@@ -1531,8 +1531,8 @@ int main(int argc, char *argv[])
 	// the socket constructors to be inside a try-retry loop. That way we can respond to severs that implemented
 	// there UDP handling erroneously, or any other temporal obstruction in the communication
 	// path (broken stacks in routers for example) Now, contact may be lost for ever and a manual
-	// restart at the this side is required.
-	// => This has been 'resolved' bij allowing the forwarder to exit at stalled servers.
+	// restart at this side is required.
+	// => This has been 'resolved' by allowing the forwarder to exit at stalled servers.
 
     /* starting the concentrator */
 	if (radiostream_enabled == true) {
@@ -1545,7 +1545,7 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 	} else {
-		MSG("WARNING: Radio is disabled, radio packets cannot be send or received.\n");
+		MSG("WARNING: Radio is disabled, radio packets cannot be sent or received.\n");
 	}
 
 	
@@ -1684,7 +1684,7 @@ int main(int argc, char *argv[])
     /* shut down transports */
     transport_stop();
 
-    //TODO: Dit heeft nawerk nodig
+    //TODO: Dit heeft nawerk nodig / This needs some more work
     pthread_cancel(thrid_jit); /* don't wait for jit thread */
     if (gps_active == true) pthread_cancel(thrid_timersync); /* don't wait for timer sync thread */
 
@@ -2109,7 +2109,7 @@ void thread_watchdog(void) {
         wait_ms(30000);
 	// timestamp updated within the last 3 stat intervals? If not assume something is wrong and exit
 	if ((time(NULL) - last_loop) > (long int)((stat_interval * 3) + 5)) {
-		MSG("ERROR: Wathdog timer expired!\n");
+		MSG("ERROR: Watchdog timer expired!\n");
 		exit(254);
 	}
     }

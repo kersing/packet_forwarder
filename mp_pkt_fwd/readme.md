@@ -14,19 +14,19 @@ Lora Gateway packet forwarder with multiple extensions
 ----------------
 
 The multi protocol  packet forwarder is a program running on the host 
-of a Lora Gateway that forward RF packets receive by the concentrator 
+of a Lora Gateway that forward RF packets received by the concentrator 
 to a server through a IP/UDP or IP/TCP link, and emits RF packets that 
-are sent by the server. 
+are sent by the server.
 
 It allows for the injection of virtual radio packets for testing and
 is capable of communication with multiple servers. It is based on the
-beacon_packet_forwarder with that distinction the operator has
+beacon_packet_forwarder with the distinction that the operator has
 detailed control over all capabilities. So beacon, gps, injection,
-up/down stream, all can be (de)activated by modifying the json.
+up/down stream, all can be (de)activated by modifying the json config file.
 
 To learn more about the IP/UDP network protocol between the gateway and the server, 
 please read the PROTOCOL.TXT document.
-For the IP/TCP network protocol please consult the information available at
+For the IP/TCP (MQTT) network protocol please consult the information available at
 https://github.com/TheThingsNetwork/ttn-gateway-connector
 
 2. System schematic and definitions
@@ -52,8 +52,8 @@ https://github.com/TheThingsNetwork/ttn-gateway-connector
 Concentrator: radio RX/TX board, based on Semtech multichannel modems (SX130x), 
 transceivers (SX135x) and/or low-power stand-alone modems (SX127x).
 
-Host: embedded computer on which the packet forwarder is run. Drives the 
-concentrator through a SPI link.
+Host: embedded computer on which the packet forwarder runs. Drives the 
+concentrator through an SPI link.
 
 Gateway: a device composed of at least one radio concentrator, a host, some 
 network connection to the internet or a private network (Ethernet, 3G, Wifi, 
@@ -63,12 +63,12 @@ Network Servers: abstract computers that will process the RF packets received an
 forwarded by the gateway, and issue RF packets in response that the gateway 
 will have to emit.
 
-Ghost Server: Program on in/external computer the serves simulated radio
-packets for testing purposes. Packets are send/received via UDP protocol.
+Ghost Server: Program on the same host or another computer that serves simulated 
+radio packets for testing purposes. Packets are sent/received via UDP protocol.
 
-Monitor Server: Program on in/external computer from which it is possible
-to maintain the gateway by requesting system status updates or logging in
-by an ssh tunnel through a firewall (on the gateways side)
+Monitor Server: Program on the same host or another computer from which it is 
+possible to maintain the gateway by requesting system status updates or logging 
+in by an ssh tunnel through a firewall (on the gateways side)
 
 
 3. Dependencies
@@ -83,7 +83,7 @@ It was tested with v1.3.0 of the library but should work with any later
 version provided the API is v1 or a later backward-compatible API.
 Data structures of the received packets are accessed by name (ie. not at a
 binary level) so new functionalities can be added to the API without affecting
-that program at all.
+the program at all.
 
 This program follows the v1.1 version of the gateway-to-server protocol.
 
