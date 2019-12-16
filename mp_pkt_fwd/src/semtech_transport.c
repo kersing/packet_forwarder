@@ -301,7 +301,7 @@ void semtech_init(int idx) {
 
     i = pthread_create( &servers[idx].t_up, NULL, (void * (*)(void *))semtech_upstream, (void *) (long) idx);
     if (i!=0) {
-    	MSG("ERROR: [semtech] failed to create upstream thread for server \"%s\"\n",servers[i].addr);
+    	MSG("ERROR: [semtech] failed to create upstream thread for server \"%s\"\n",servers[idx].addr);
 	exit(EXIT_FAILURE);
     }
 }
@@ -669,17 +669,17 @@ void semtech_thread_down(void* pic) {
             if (buff_down[3] == PKT_PULL_ACK) {
                 if ((buff_down[1] == token_h) && (buff_down[2] == token_l)) {
                     if (req_ack) {
-                    	LOGGER("INFO: [down] for server %s duplicate ACK received :)\n",servers[i].addr);
+                    	LOGGER("INFO: [down] for server %s duplicate ACK received :)\n",servers[ic].addr);
                     } else { /* if that packet was not already acknowledged */
                         req_ack = true;
                         autoquit_cnt = 0;
                         pthread_mutex_lock(&mx_meas_dw);
                         meas_dw_ack_rcv[ic] += 1;
                         pthread_mutex_unlock(&mx_meas_dw);
-                        LOGGER("INFO: [down] for server %s PULL_ACK received in %i ms\n", servers[i].addr, (int)(1000 * difftimespec(recv_time, send_time)));
+                        LOGGER("INFO: [down] for server %s PULL_ACK received in %i ms\n", servers[ic].addr, (int)(1000 * difftimespec(recv_time, send_time)));
                     }
                 } else { /* out-of-sync token */
-                	LOGGER("INFO: [down] for server %s, received out-of-sync ACK\n",servers[i].addr);
+                	LOGGER("INFO: [down] for server %s, received out-of-sync ACK\n",servers[ic].addr);
                 }
                 continue;
             }
@@ -688,7 +688,7 @@ void semtech_thread_down(void* pic) {
 			//TODO: This might generate to much logging data. The reporting should be reevaluated and an option -q should be added.
             /* the datagram is a PULL_RESP */
             buff_down[msg_len] = 0; /* add string terminator, just to be safe */
-            LOGGER("INFO: [down] for server %s serv_addr[ic] PULL_RESP received  - token[%d:%d] :)\n",servers[i].addr, buff_down[1], buff_down[2]); /* very verbose */
+            LOGGER("INFO: [down] for server %s serv_addr[ic] PULL_RESP received  - token[%d:%d] :)\n",servers[ic].addr, buff_down[1], buff_down[2]); /* very verbose */
 			MSG_DEBUG(DEBUG_LOG,"\nJSON down: %s\n", (char *)(buff_down + 4)); /* DEBUG: display JSON payload */
 
             meas_dw_dgram_rcv[ic] += 1; /* count all datagrams that are received */

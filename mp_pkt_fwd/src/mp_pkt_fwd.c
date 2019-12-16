@@ -144,7 +144,7 @@ Server servers[MAX_SERVERS];	/* Server information */
 static unsigned stat_interval = DEFAULT_STAT; /* time interval (in sec) at which statistics are collected and displayed */
 
 /* network protocol variables */
-long push_timeout_ms;
+long push_timeout_ms = 100L;
 
 /* hardware access control and correction */
 pthread_mutex_t mx_concent = PTHREAD_MUTEX_INITIALIZER; /* control access to the concentrator */
