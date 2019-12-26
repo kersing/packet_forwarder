@@ -1,23 +1,12 @@
 #! /bin/bash
 #
-# Build script for Raspberry Pi based on resin build script
+# Build script for the Lorank8 (Beagleboard + IC880A) based on rpi build script
 #
 
 INSTALL_DIR="/opt/ttn-gateway"
 
 mkdir -p $INSTALL_DIR/dev
 cd $INSTALL_DIR/dev
-
-if [ ! -d wiringPi ]; then
-    git clone git://git.drogon.net/wiringPi  || { echo 'Cloning wiringPi failed.' ; exit 1; }
-    cd wiringPi
-else
-    cd wiringPi
-    git reset --hard
-    git pull
-fi
-./build
-cd ..
 
 # alwas get the latest
 rm -rf lora_gateway
@@ -64,10 +53,10 @@ else
 fi
 
 apt-get update
-apt-get -y install protobuf-compiler libprotobuf-dev libprotoc-dev automake libtool autoconf python-dev python-rpi.gpio
+apt-get -y install protobuf-compiler libprotobuf-dev libprotoc-dev automake libtool autoconf python-dev
 
 cd $INSTALL_DIR/dev/lora_gateway/libloragw
-sed -i -e 's/PLATFORM= .*$/PLATFORM= imst_rpi/g' library.cfg
+sed -i -e 's/PLATFORM= .*$/PLATFORM= lorank/g' library.cfg
 sed -i -e 's/CFG_SPI= .*$/CFG_SPI= native/g' library.cfg
 #sed -i -e 's/DEBUG_GPS= .*$/DEBUG_GPS= 1/g' library.cfg
 make
