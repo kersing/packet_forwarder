@@ -502,12 +502,14 @@ void ttn_upstream(void *pic) {
 		continue;
 	    }
 
+#if 0
 	    // basic sanity check required for USB interfaced modules
 	    mote_addr  = p->payload[1];
 	    mote_addr |= p->payload[2] << 8;
 	    mote_addr |= p->payload[3] << 16;
 	    mote_addr |= p->payload[4] << 24;
 	    if (mote_addr == 0) continue;
+#endif
 
 	    switch (p->status) {
 		case STAT_CRC_OK:
