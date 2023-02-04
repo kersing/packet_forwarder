@@ -1459,6 +1459,8 @@ void semtech_upstream(void *pic) {
 		buff_index -= 8; /* removes "rxpk":[ */
 	    } else {
 		/* all packet have been filtered out and no report, restart loop */
+		free(entry);
+		MSG("WARN: [up] all packet have been filtered out with no report.\n");
 		continue;
 	    }
 	} else {
